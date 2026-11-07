@@ -83,14 +83,21 @@ enum LogCode : uint8_t {
   LOG_COUNT
 };
 
+/* ---------- 传感器类型 ---------- */
+enum SensorType : uint8_t {
+  SENS_HUMID = 0,   /* 电容式土壤湿度，可间歇供电，500ms 稳住 */
+  SENS_PH    = 1    /* 土壤 pH，电极必须常供电保持极化，响应以分钟计 */
+};
+
 /* ---------- 单通道可配置项 ---------- */
 struct ChannelCfg {
   uint8_t  autoOn;      /* 0/1 */
-  uint8_t  thrPct;      /* 目标湿度阈值 5~90 */
+  uint8_t  type;        /* SensorType：0 湿度，1 pH */
+  uint8_t  thrPct;      /* 目标值阈值：湿度是 5~90%，pH 暂按 ×10 存（如 65 = pH 6.5） */
   uint16_t maxSec;      /* 单次浇水时长，被 HARD_MAX_SEC 夹住 */
   uint16_t minGapSec;   /* 两次自动浇水的最小间隔 */
-  uint16_t dryRaw;      /* 干点原始读数（大） */
-  uint16_t wetRaw;      /* 湿点原始读数（小） */
+  uint16_t dryRaw;      /* 低点原始读数：湿度=干土（大），pH=酸液（小） */
+  uint16_t wetRaw;      /* 高点原始读数：湿度=泡水（小），pH=碱液（大） */
 };
 
 /* ---------- 定时任务 ---------- */

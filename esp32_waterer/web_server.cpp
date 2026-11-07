@@ -123,7 +123,9 @@ static void handleRoot(void) {
 
 /* ================= 状态快照 ================= */
 static void handleState(void) {
-  char b[1200];
+  /* 2048 而不是 1200：给后续 32 路和 pH 字段留余量。
+     这个缓冲在栈上，ESP32 默认任务栈 8KB，2KB 还在安全范围内。 */
+  char b[2048];
   int n = 0;
   uint32_t nowMs = millis();
   char ip[20];
@@ -159,10 +161,11 @@ static void handleState(void) {
   for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
     const ChannelCfg& c = storeCfg().ch[i];
     n = app(b, n, sizeof(b),
-            "%s{\"i\":%d,\"raw\":%d,\"pct\":%d,\"flt\":%d,\"auto\":%d,\"thr\":%d,"
+            "%s{\"i\":%d,\"type\":%d,\"raw\":%d,\"pct\":%d,\"flt\":%d,\"auto\":%d,\"thr\":%d,"
             "\"run\":%d,\"q\":%d,\"bud\":%lu,\"dry\":%d,\"wet\":%d}",
             (i ? "," : ""),
             (int)i,
+            (int)c.type,
             (int)sensorsRaw(i),
             (int)sensorsPct(i),
             (int)sensorsFault(i),

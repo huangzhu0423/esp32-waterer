@@ -20,6 +20,27 @@ static uint32_t s_usedSec[CHANNEL_COUNT];
 static uint32_t s_globHour = 0;
 static uint32_t s_globUsedSec = 0;
 
+/* ============ 输出层：唯一直接碰硬件的地方 ============
+ * 用位掩码整体下发，而不是逐路开关。原因是换成 MCP23017 后，
+ * 它的输出是"读-改-写整个 16 位寄存器"，逐路接口没法一一映射，
+ * 而位掩码可以整块翻译过去。
+ * bit i = 1 表示通道 i 开泵。
+ */
+static uint32_t s_outMask = 0;
+
+static void pumpHwApply(uint32_t mask) {
+#if USE_IO_EXPANDER
+  /* 32 路时在这里换成 MCP23017（I2C 写两片 16 位寄存器）
+     或 74HC595（移位串出 4 个字节）。
+     上层调用方式与下面完全一致，不需要任何改动。 */
+  (void)mask;
+#else
+  for (uint8_t i = 0; i < CHANNEL_COUNT && i < 32; i++) {
+    digitalWrite(PIN_PUMP[i], (mask & (1UL << i)) ? PUMP_ON_LEVEL : PUMP_OFF_LEVEL);
+  }
+#endif
+}
+
 static void rollBucket(uint32_t nowMs) {
   uint32_t h = nowMs / 3600000UL;
   if (h != s_globHour) {
@@ -43,11 +64,15 @@ void pumpBegin(void) {
   /* 上电第一件事：把所有泵脚拉到"关"电平再设为输出。
      注意 bootloader 有 200~300ms 的窗口软件管不到，
      那段时间靠硬件 10k 下拉（低边 MOS）或模块自带上拉（继电器）保证不动作。 */
+#if !USE_IO_EXPANDER
   for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-    digitalWrite(PIN_PUMP[i], PUMP_OFF_LEVEL);
+    digitalWrite(PIN_PUMP[i], PUMP_OFF_LEVEL);   /* 先写输出寄存器，避免切换瞬间冒高电平 */
     pinMode(PIN_PUMP[i], OUTPUT);
-    digitalWrite(PIN_PUMP[i], PUMP_OFF_LEVEL);
+    digitalWrite(PIN_PUMP[i], PUMP_OFF_LEVEL);   /* 切换后再确认一次 */
   }
+#endif
+  s_outMask = 0;
+  pumpHwApply(0);
   s_activeCh = -1;
   s_src = SRC_NONE;
   s_startMs = 0;
@@ -114,7 +139,8 @@ bool pumpStart(uint8_t ch, uint32_t durMs, uint8_t src) {
   s_durMs = durMs;
   s_lastEdgeMs = s_startMs;
 
-  digitalWrite(PIN_PUMP[ch], PUMP_ON_LEVEL);   /* 开泵（电平由 PUMP_ACTIVE_LOW 决定） */
+  s_outMask |= (1UL << ch);
+  pumpHwApply(s_outMask);                      /* 开泵（有效电平由 PUMP_ACTIVE_LOW 决定） */
   storeRunMarkerSet(true);                     /* 标记"带泵运行中"，用于掉电检测 */
   logAdd(LOG_PUMP_START, (int8_t)ch);
   return true;
@@ -127,7 +153,8 @@ void pumpStop(uint8_t reason) {
   uint32_t nowMs = millis();
   uint32_t ran = (nowMs >= s_startMs) ? (nowMs - s_startMs) : 0;
 
-  digitalWrite(PIN_PUMP[ch], PUMP_OFF_LEVEL);
+  s_outMask &= ~(1UL << ch);
+  pumpHwApply(s_outMask);
   s_lastEdgeMs = nowMs;
   s_lastStopMs = nowMs;
   s_activeCh = -1;

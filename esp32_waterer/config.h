@@ -66,9 +66,18 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
   #define PUMP_OFF_LEVEL LOW
 #endif
 
+/* ================= 输出扩展（30 路时启用） =================
+ * 0 = 直接驱动 GPIO（当前 6 路用这个，安全可用的输出脚约 13 个）
+ * 1 = 经 MCP23017（I2C）或 74HC595（移位）扩展
+ * 打开后只需改 pump.cpp 里 pumpHwApply() 的实现，
+ * 调度、互斥、预算这些业务逻辑一行都不用动。 */
+#define USE_IO_EXPANDER 0
+
 /* ================= MUX 预留（本次不接） =================
  * 将来要突破 6 路时：把 USE_MUX 改 1、接 CD74HC4067、
  * 只改 sensorsReadRaw() 一个函数，其余业务代码零改动。
+ * 注意 PIN_MUX_S0 与 PIN_SENSOR_PWR 都占了 GPIO27，
+ * 启用 MUX 时要把其中一个挪到别的脚。
  */
 #define USE_MUX 0
 #if USE_MUX
@@ -159,7 +168,10 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
 #define NOISY_LIMIT_PER_MIN       12    /* 一分钟丢弃样本超过 12 次判为噪声故障 */
 
 /* ================= 默认配置（首次上电 / 配置损坏时使用） ================= */
-#define CFG_VERSION                1
+/* 2 = 通道结构加入 type 字段（湿度/pH）。
+ * 结构体大小变了，老设备读到旧 blob 会因长度不符自动回落默认值，
+ * 属于预期行为——升级后需要重新配网、重新校准。 */
+#define CFG_VERSION                2
 #define DEF_THR_PCT               30
 #define DEF_MAX_SEC               15
 #define DEF_MIN_GAP_SEC          300

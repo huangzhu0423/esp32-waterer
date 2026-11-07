@@ -36,6 +36,7 @@ void storeDefaults(ConfigBlob& c) {
   c.ver = CFG_VERSION;
   for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
     c.ch[i].autoOn    = DEF_AUTO_ON;
+    c.ch[i].type      = SENS_HUMID;     /* 出厂按湿度探头算，pH 通道由网页改 */
     c.ch[i].thrPct    = DEF_THR_PCT;
     c.ch[i].maxSec    = DEF_MAX_SEC;
     c.ch[i].minGapSec = DEF_MIN_GAP_SEC;
