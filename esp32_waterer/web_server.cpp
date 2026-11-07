@@ -425,17 +425,24 @@ static void handleLogs(void) {
 
   static LogRec recs[8];
   uint16_t n = logSince(since, recs, 8);
+  uint32_t upSec = millis() / 1000UL;
+  uint32_t wall = netTimeSynced() ? netEpoch() : 0;
+  uint32_t boot = (wall > upSec) ? (wall - upSec) : 0;
 
-  char b[1200];
+  char b[1600];
   int w = 0;
-  w = app(b, w, sizeof(b), "{\"ok\":1,\"seq\":%lu,\"items\":[",
-          (unsigned long)logSeq());
+  /* w = 该条日志的绝对 UTC epoch；d = 浇水秒数。与 MQTT 日志帧字段保持一致 */
+  w = app(b, w, sizeof(b), "{\"ok\":1,\"wall\":%lu,\"boot\":%lu,\"seq\":%lu,\"items\":[",
+          (unsigned long)wall, (unsigned long)boot, (unsigned long)logSeq());
   for (uint16_t i = 0; i < n; i++) {
+    uint32_t abs = boot ? (boot + recs[i].t) : 0;
     w = app(b, w, sizeof(b),
-            "%s{\"s\":%lu,\"t\":%lu,\"c\":\"%s\",\"k\":\"%s\",\"ch\":%d}",
+            "%s{\"s\":%lu,\"t\":%lu,\"w\":%lu,\"d\":%u,\"c\":\"%s\",\"k\":\"%s\",\"ch\":%d}",
             (i ? "," : ""),
             (unsigned long)recs[i].s,
             (unsigned long)recs[i].t,
+            (unsigned long)abs,
+            (unsigned)recs[i].d,
             logText(recs[i].code),
             logKind(recs[i].code),
             (int)recs[i].ch);

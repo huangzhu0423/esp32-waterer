@@ -474,36 +474,44 @@ function chOptions(){
 }
 
 /* ---------- 日志：北京时间 + 上次浇水间隔 ---------- */
+function logAbs(it){
+  /* 固件 1.1.1 起每条日志带 w（绝对 UTC epoch）+ 帧头带 boot（开机 epoch），
+     不再依赖手机时钟反推，设备重启后 uptime 归零也不会算错。
+     老固件没有这些字段时，回落到「开机时刻 + uptime」。 */
+  if(+it.w>0) return +it.w;
+  if(bootWallMs) return bootWallMs/1000+(+it.t||0);
+  return null;
+}
 function logWallTime(it){
-  /* 日志的 t 是设备 uptime 秒，与状态帧的 up 同源；
-     用「收到状态帧的时刻 - up」反推开机时刻，再加 t 得到墙上时间 */
-  if(!bootWallMs) return hhmmss(it.t);
-  return bjTime(bootWallMs+(+it.t||0)*1000);
+  var a=logAbs(it);
+  return a!=null ? bjTime(a*1000) : hhmmss(it.t);
 }
 function renderLogs(items){
   LOGS=items||[];
   var box=$('#logList'); box.innerHTML='';
   if(!items||!items.length){ box.appendChild(el('div','empty','暂无日志')); return; }
-  var asc=items.slice(), lastT=null, gaps={}, newest=null;
+  var asc=items.slice(), lastA=null, gaps={}, newestA=null, hasAbs=false;
   asc.forEach(function(it){
     if(it.c && it.c.indexOf('开始浇水')>=0){
-      var t=+it.t||0;
-      if(lastT!=null) gaps[it.s]=fmtGap(t-lastT);
-      lastT=t; newest=t;
+      var a=logAbs(it);
+      if(a!=null) hasAbs=true; else a=+it.t||0;
+      if(lastA!=null) gaps[it.s]=fmtGap(a-lastA);
+      lastA=a; newestA=a;
     }
   });
-  lastPumpAbsMs=(newest!=null && bootWallMs)?(bootWallMs+newest*1000):0;
+  lastPumpAbsMs=(newestA!=null && hasAbs)?(newestA*1000):0;
   if(lastPumpAbsMs){
     var g=el('div','hint','上次浇水：'+bjFull(lastPumpAbsMs)+' · 距今 '+fmtGap(Math.floor((Date.now()-lastPumpAbsMs)/1000)));
     g.id='logGap'; g.style.textAlign='left'; box.appendChild(g);
   }
   asc.slice().reverse().forEach(function(it){
-    var d=el('div','log');
+    var row=el('div','log');
     var dot=el('span','d '+(it.kind||''));
     var t=el('span','t',logWallTime(it));
     var extra=gaps[it.s]?(' · 距上次浇水 '+gaps[it.s]):'';
-    var x=el('span','',it.c+(it.ch>=0?(' · '+chName(it.ch)):'')+extra);
-    d.appendChild(t); d.appendChild(dot); d.appendChild(x); box.appendChild(d);
+    var dur=(+it.d>0)?(' · '+it.d+'s'):'';
+    var x=el('span','',it.c+(it.ch>=0?(' · '+chName(it.ch)):'')+dur+extra);
+    row.appendChild(t); row.appendChild(dot); row.appendChild(x); box.appendChild(row);
   });
 }
 
@@ -542,8 +550,10 @@ function applyState(s){
   $('#dIp').textContent=s.ip||'—';
   $('#dRssi').textContent=s.rssi? s.rssi+' dBm':'—';
   $('#dHeap').textContent=s.heap? Math.round(s.heap/1024)+' KB':'—';
-  lastUp=+s.up||0; lastNext=+s.next||0; bootWallMs=Date.now()-lastUp*1000;
-  /* 日志帧可能比状态帧先到，当时还不知道开机时刻，补算后重画一次 */
+  lastUp=+s.up||0; lastNext=+s.next||0;
+  /* 新固件直接给开机时刻 UTC epoch，优先用设备时间；旧固件才用手机时钟反推 */
+  bootWallMs=(+s.boot>0)?(+s.boot*1000):(Date.now()-lastUp*1000);
+  /* 日志帧可能比状态帧先到，补算后重画一次 */
   if(LOGS.length) renderLogs(LOGS);
   activeCh=(s.active&&s.active.ch>=0&&s.active.ch<N)?s.active.ch:-1;
   activeRemain=s.active?(+s.active.remain||0):0; activeAt=Date.now();
@@ -608,7 +618,8 @@ function connect(){
     try{
       var s=JSON.parse(payload.toString());
       if(s.k==='t'){ TASKS=s.tasks||[]; renderTasks(); }
-      else if(s.k==='l'){ renderLogs(s.items||[]); }
+      /* 日志帧自带 boot，即使状态帧还没到也能显示北京时间 */
+      else if(s.k==='l'){ if(+s.boot>0) bootWallMs=+s.boot*1000; renderLogs(s.items||[]); }
       else applyState(s);
     }catch(e){}
   });

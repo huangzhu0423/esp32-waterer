@@ -142,7 +142,8 @@ bool pumpStart(uint8_t ch, uint32_t durMs, uint8_t src) {
   s_outMask |= (1UL << ch);
   pumpHwApply(s_outMask);                      /* 开泵（有效电平由 PUMP_ACTIVE_LOW 决定） */
   storeRunMarkerSet(true);                     /* 标记"带泵运行中"，用于掉电检测 */
-  logAdd(LOG_PUMP_START, (int8_t)ch);
+  /* 记下本次设定时长，远程页能直接核对「设置 15 秒是否真按 15 秒浇」 */
+  logAdd(LOG_PUMP_START, (int8_t)ch, (uint16_t)(durMs / 1000UL));
   return true;
 }
 
@@ -163,15 +164,17 @@ void pumpStop(uint8_t reason) {
   uint32_t ranSec = ran / 1000UL;
   s_usedSec[ch] += ranSec;
   s_globUsedSec += ranSec;
+  uint16_t ranSec16 = (uint16_t)(ranSec > 65535UL ? 65535UL : ranSec);
 
   storeRunMarkerSet(false);
 
+  /* 停止日志带上实际运行秒数：设定 15s 却跑了 300s 时一眼能看出来 */
   switch (reason) {
-    case STOP_DONE:    logAdd(LOG_PUMP_DONE, (int8_t)ch);        break;
-    case STOP_MANUAL:  logAdd(LOG_PUMP_MANUAL_STOP, (int8_t)ch); break;
-    case STOP_PREEMPT: logAdd(LOG_PUMP_PREEMPT, (int8_t)ch);     break;
-    case STOP_TIMEOUT: logAdd(LOG_PUMP_TIMEOUT, (int8_t)ch);     break;
-    case STOP_BUDGET:  logAdd(LOG_PUMP_BUDGET, (int8_t)ch);      break;
+    case STOP_DONE:    logAdd(LOG_PUMP_DONE, (int8_t)ch, ranSec16);        break;
+    case STOP_MANUAL:  logAdd(LOG_PUMP_MANUAL_STOP, (int8_t)ch, ranSec16); break;
+    case STOP_PREEMPT: logAdd(LOG_PUMP_PREEMPT, (int8_t)ch, ranSec16);     break;
+    case STOP_TIMEOUT: logAdd(LOG_PUMP_TIMEOUT, (int8_t)ch, ranSec16);     break;
+    case STOP_BUDGET:  logAdd(LOG_PUMP_BUDGET, (int8_t)ch, ranSec16);      break;
     default: break;
   }
   s_src = SRC_NONE;

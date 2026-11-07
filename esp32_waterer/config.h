@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 /* ================= 固件信息 ================= */
-#define FW_VERSION   "1.1.0"
+#define FW_VERSION   "1.1.1"
 #define FW_BUILD     __DATE__ " " __TIME__
 
 /* ================= 规模 ================= */
@@ -215,7 +215,7 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
  * 走公共 broker（巴法云 / EMQ 公共服 / 自建），板子连上路由器后主动连，
  * 手机在外网就能看湿度、下发浇水指令，不需要任何常开电脑或公网 IP。
  * 配置单独存 NVS 命名空间 "mqtt"，不进 ConfigBlob，改这个不会重置主配置。 */
-#define MQTT_BUF_SIZE       1536   /* 收发缓冲：状态 JSON 含 6 路名称/校准点约 1KB，留余量 */
+#define MQTT_BUF_SIZE       2048   /* 收发缓冲：状态帧约 1KB，日志帧 12 条带绝对时间/时长最长约 1.7KB */
 #define MQTT_PUB_MS        30000   /* 状态上报节流：最多每 30 秒一次 */
 #define MQTT_RETRY_MS       5000   /* 连接失败后 5 秒重试 */
 #define MQTT_PORT_DFLT     1883

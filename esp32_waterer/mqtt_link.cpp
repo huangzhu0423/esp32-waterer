@@ -99,20 +99,40 @@ static void publishJson(const char* b) {
   s_mqtt.publish(top, b, false);
 }
 
+/* 设备墙上时钟 = UTC epoch 秒。time(nullptr) 不受 configTime 的东八区
+   偏移影响，前端统一自己 +8 小时显示北京时间。
+   NTP 未同步时返回 0，前端会回落到「收到状态帧的时刻 - uptime」反推。 */
+static uint32_t wallEpoch(void) {
+  return netTimeSynced() ? netEpoch() : 0;
+}
+static uint32_t bootEpoch(uint32_t wall, uint32_t upSec) {
+  return (wall > upSec) ? (wall - upSec) : 0;
+}
+
 /* ================= 状态上报 ================= */
 static void publishState(void) {
   if (!s_conn) return;
   char b[MQTT_BUF_SIZE];
   int n = 0;
   uint32_t nowMs = millis();
+  uint32_t upSec = nowMs / 1000UL;
+  uint32_t wall = wallEpoch();
+  uint32_t boot = bootEpoch(wall, upSec);
   char ip[20];
   netIp(ip, sizeof(ip));
 
+  /* wall = 当前 UTC epoch；boot = 开机时刻 UTC epoch。
+     日志里的 t 是开机秒数，boot + t 就是该条日志的绝对时间，
+     不再依赖手机时钟，也不怕设备重启后 uptime 归零。 */
   n = app2(b, n, sizeof(b),
-           "{\"k\":\"s\",\"fw\":\"%s\",\"up\":%lu,\"heap\":%lu,\"mode\":\"%s\",\"ip\":\"%s\","
+           "{\"k\":\"s\",\"fw\":\"%s\",\"up\":%lu,\"wall\":%lu,\"boot\":%lu,\"tz\":%d,"
+           "\"heap\":%lu,\"mode\":\"%s\",\"ip\":\"%s\","
            "\"rssi\":%d,\"samp\":%d,\"next\":%lu,\"cyc\":%d,",
            FW_VERSION,
-           (unsigned long)(nowMs / 1000UL),
+           (unsigned long)upSec,
+           (unsigned long)wall,
+           (unsigned long)boot,
+           (int)NTP_TZ_OFFSET_SEC,
            (unsigned long)ESP.getFreeHeap(),
            (netMode() == NET_STA) ? "sta" : "ap",
            ip,
@@ -180,23 +200,35 @@ static void publishTasks(void) {
   publishJson(b);
 }
 
-/* 最近 12 条运行日志，单独一帧 */
+/* 最近 12 条运行日志，单独一帧。
+   每条带 w（绝对 UTC epoch）与 d（浇水秒数）：
+   w 由 boot + uptime 算出，即使日志写入时 NTP 还没同步、只要发布时已同步就准确。 */
 static void publishLogs(void) {
   if (!s_conn) return;
   static LogRec recs[12];
   uint32_t seq = logSeq();
   uint32_t since = (seq > 12) ? (seq - 12) : 0;
   uint16_t cnt = logSince(since, recs, 12);
+  uint32_t wall = wallEpoch();
+  uint32_t boot = bootEpoch(wall, millis() / 1000UL);
 
-  char b[1200];
+  char b[1800];
   int n = 0;
-  n = app2(b, n, sizeof(b), "{\"k\":\"l\",\"seq\":%lu,\"items\":[", (unsigned long)seq);
+  n = app2(b, n, sizeof(b),
+           "{\"k\":\"l\",\"wall\":%lu,\"boot\":%lu,\"tz\":%d,\"seq\":%lu,\"items\":[",
+           (unsigned long)wall, (unsigned long)boot,
+           (int)NTP_TZ_OFFSET_SEC, (unsigned long)seq);
   for (uint16_t i = 0; i < cnt; i++) {
+    /* 留足一条日志 + 闭合括号：宁可少发几条，也不能把 JSON 截断成非法帧 */
+    if (n > (int)sizeof(b) - 200) break;
+    uint32_t abs = boot ? (boot + recs[i].t) : 0;
     n = app2(b, n, sizeof(b),
-             "%s{\"s\":%lu,\"t\":%lu,\"c\":\"%s\",\"kind\":\"%s\",\"ch\":%d}",
+             "%s{\"s\":%lu,\"t\":%lu,\"w\":%lu,\"d\":%u,\"c\":\"%s\",\"kind\":\"%s\",\"ch\":%d}",
              (i ? "," : ""),
              (unsigned long)recs[i].s,
              (unsigned long)recs[i].t,
+             (unsigned long)abs,
+             (unsigned)recs[i].d,
              logText(recs[i].code),
              logKind(recs[i].code),
              (int)recs[i].ch);
@@ -421,7 +453,8 @@ static void onMessage(char* topic, byte* payload, unsigned int len) {
   if (strcmp(act, "stop") == 0) {
     if (pumpIsActive() && pumpActiveCh() == (int8_t)ch) pumpStop(STOP_MANUAL);
     else schedCancel((uint8_t)ch);
-    s_reply |= REPLY_STATE;
+    /* 停止会写一条带实际时长的日志，立刻回帧让远程页刷新 */
+    s_reply |= REPLY_STATE | REPLY_LOGS;
     return;
   }
   if (strcmp(act, "auto") == 0) {
@@ -447,7 +480,8 @@ static void onMessage(char* topic, byte* payload, unsigned int len) {
   if (sec < 1) sec = 1;
   if (sec > HARD_MAX_SEC) sec = HARD_MAX_SEC;
   if (schedRequest((uint8_t)ch, (uint32_t)sec * 1000UL, SRC_MANUAL) == REQ_OK) {
-    s_reply |= REPLY_STATE;
+    /* 开泵日志里带本次设定秒数，远程页点完浇水马上能看到 */
+    s_reply |= REPLY_STATE | REPLY_LOGS;
   }
 }
 

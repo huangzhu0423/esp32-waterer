@@ -11,17 +11,19 @@ void logBegin(void) {
     s_buf[i].t = 0;
     s_buf[i].code = LOG_BOOT;
     s_buf[i].ch = -1;
+    s_buf[i].d = 0;
   }
   s_seq = 0;
   s_head = 0;
 }
 
-void logAdd(uint8_t code, int8_t ch) {
+void logAdd(uint8_t code, int8_t ch, uint16_t durSec) {
   s_seq++;
   s_buf[s_head].s = s_seq;
   s_buf[s_head].t = (uint32_t)(millis() / 1000UL);
   s_buf[s_head].code = code;
   s_buf[s_head].ch = ch;
+  s_buf[s_head].d = durSec;
   s_head = (uint16_t)((s_head + 1) % LOG_CAP);
 }
 

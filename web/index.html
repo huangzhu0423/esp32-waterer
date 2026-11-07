@@ -788,6 +788,12 @@ function loadTasks(){
   }).catch(function(){});
 }
 
+/* 新固件给每条日志带 w（绝对 UTC epoch）与 d（浇水秒数），
+   统一显示北京时间；老固件没有 w 时仍回落到开机秒数 */
+function bjStamp(sec){
+  var d=new Date(sec*1000+8*3600000), p=function(n){ return n<10?'0'+n:''+n; };
+  return p(d.getUTCHours())+':'+p(d.getUTCMinutes())+':'+p(d.getUTCSeconds());
+}
 /* 增量拉日志 */
 var lastLogSeq = 0;
 function pollLogs(){
@@ -795,7 +801,9 @@ function pollLogs(){
   fetch('/api/logs?since='+lastLogSeq).then(function(r){ return r.json(); }).then(function(d){
     if(!d || !d.items || !d.items.length) return;
     d.items.forEach(function(it){
-      logs.unshift({ t: hhmmss(it.t), txt: (it.ch>=0 ? '通道'+(it.ch+1)+' ' : '') + it.c, kind: it.k||'' });
+      var stamp=(+it.w>0)?bjStamp(+it.w):hhmmss(it.t);
+      var txt=(it.ch>=0 ? '通道'+(it.ch+1)+' ' : '') + it.c + ((+it.d>0)?(' · '+it.d+'s'):'');
+      logs.unshift({ t: stamp, txt: txt, kind: it.k||'' });
       lastLogSeq = it.s;
     });
     if(logs.length > 200) logs.length = 200;
