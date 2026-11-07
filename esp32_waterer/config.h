@@ -92,22 +92,48 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
 #define ADC_SAMPLE_INTERVAL_MS    500   /* 每路 500ms 采一次，6 路轮流 */
 
 /* ================= 探头间歇供电 =================
- * 电容式探头长期通电会加速极板电化学腐蚀，6 路常供合计约 30mA，
- * 电池/太阳能供电下这个值很要命。改成一路上电、采完立刻断电。
+ * 电容式探头长期通电会加速极板电化学腐蚀，6 路常供合计约 30mA。
+ * 改成一路上电、采完立刻断电。
  *
- * ！硬件必须配合，否则这几行配置不起作用 ！
- *   3V3 ──[P-MOS 源极] [漏极]── 传感器 VCC 母线
- *                栅极 ── GPIO27
- *                栅极 ── 10k ── 3V3（上拉，保证复位瞬间默认断开）
- * GPIO 拉低 = 导通供电，拉高 = 断开。
- * 必须用 P-MOS 高边开关（AO3401 / SI2301 之类）。
- * 不能拿 N-MOS 断 GND：探头断电后 AOUT 仍会经内部电路带电压，
+ * ！硬件必须配合，否则下面这些配置不起作用 ！
+ *
+ * 方案 A：继电器模块（接线最简单，推荐）
+ *   3V3  ── 继电器 COM
+ *   继电器 NO ── 传感器 VCC 母线（六路探头 VCC 并在一起）
+ *   继电器 IN ── GPIO27       模块 VCC/GND 接 5V/GND
+ *   断开 VCC 是彻底隔离，AOUT 不会经内部电路倒灌，比断 GND 安全得多。
+ *   常见模块是"高电平触发"，即 SENSOR_PWR_ACTIVE_LOW = 0；
+ *   模块上有 H/L 跳线的，按跳线实际位置设。
+ *
+ * 方案 B：P-MOS 高边开关（体积小、无触点磨损，但要会焊）
+ *   3V3 ──[S] P-MOS [D]── 传感器 VCC 母线
+ *              [G] ── GPIO27，且 G 经 10k 上拉到 3V3
+ *   GPIO 拉低才导通，此时设 SENSOR_PWR_ACTIVE_LOW = 1。
+ *
+ * 两种方案都不能用 N-MOS 断 GND：探头断电后 AOUT 仍会经内部电路带电压，
  * 电流会从 ADC 引脚的 ESD 保护二极管倒灌进芯片，读数和寿命都完蛋。
+ *
+ * 继电器寿命提醒：机械触点约 10 万次，30 分钟一轮 ≈ 1.75 万次/年，
+ * 加上浇水后补采，大约 4~5 年到期。另外 30mA 属"干电流"，银触点不会
+ * 起弧自清洁，长期可能氧化导致接触电阻变大——若发现六路读数同时偏高，
+ * 先量一下触点两端压降。想彻底免除这项维护就换 P-MOS。
  *
  * 注意 GPIO27 与 USE_MUX 的 PIN_MUX_S0 撞车，将来启用多路复用要换脚。 */
 #define PIN_SENSOR_PWR        27
-#define SENSOR_PWR_ON_LEVEL   LOW    /* P-MOS 栅极拉低才导通 */
-#define SENSOR_PWR_OFF_LEVEL  HIGH
+
+/* 0 = 高电平吸合 —— 继电器模块"高电平触发"跳线（多数模块出厂默认）
+ * 1 = 低电平有效 —— 继电器"低电平触发"，或 P-MOS 高边开关栅极
+ * 复位期间 GPIO27 处于高阻：高触发模块的 IN 自带下拉、低触发模块的 IN
+ * 自带上拉，两种情况继电器都保持释放，探头不会意外上电。 */
+#define SENSOR_PWR_ACTIVE_LOW   0
+
+#if SENSOR_PWR_ACTIVE_LOW
+  #define SENSOR_PWR_ON_LEVEL  LOW
+  #define SENSOR_PWR_OFF_LEVEL HIGH
+#else
+  #define SENSOR_PWR_ON_LEVEL  HIGH
+  #define SENSOR_PWR_OFF_LEVEL LOW
+#endif
 
 #define SENSOR_CYCLE_MS   1800000UL  /* 采集周期 30 分钟 */
 #define SENSOR_SETTLE_MS      500    /* 上电后等探头输出稳定（内部有滤波电容） */
