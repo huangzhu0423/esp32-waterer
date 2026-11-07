@@ -214,6 +214,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
       <div class="row"><span class="grow">IP</span><b id="dIp">—</b></div>
       <div class="row"><span class="grow">信号</span><b id="dRssi">—</b></div>
       <div class="row"><span class="grow">可用内存</span><b id="dHeap">—</b></div>
+      <div class="row"><span class="grow">北京时间</span><b id="dNow">—</b></div>
       <div class="row"><span class="grow">在线时长</span><b id="dUp">—</b></div>
       <div class="row"><span class="grow">下次采集</span><b id="dNext">—</b></div>
       <div class="row"><span class="grow">最近更新</span><b id="dSeen">—</b></div>
@@ -231,7 +232,6 @@ details.conf[open] summary:after{transform:rotate(90deg)}
         <div style="padding:6px 0 4px"><input type="password" id="pass" placeholder="密码（巴法云同 uid）" autocomplete="off"></div>
         <div style="padding:6px 0 4px"><input type="text" id="devid" placeholder="设备 ID，如 aw_AF48" autocomplete="off"></div>
         <div style="padding:6px 0 4px"><input type="text" id="token" placeholder="指令令牌" autocomplete="off"></div>
-        <div class="row"><span class="grow">默认浇水（秒）</span><input type="number" id="sec" value="15" min="1" max="300" style="width:90px;text-align:center"></div>
         <div style="display:flex;gap:8px;padding:12px 0">
           <button class="btn ghost sm" id="clearCfg">清除</button>
           <button class="btn sm" id="save" style="flex:1">保存并连接</button>
@@ -249,17 +249,49 @@ details.conf[open] summary:after{transform:rotate(90deg)}
 (function(){
 "use strict";
 var N=6, RING_C=2*Math.PI*26;
-var CH=[], TASKS=[], client=null, connected=false;
+var CH=[], TASKS=[], LOGS=[], client=null, connected=false;
 var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null, lastStateAt=0;
+var lastUp=0, lastNext=0, bootWallMs=0, activeCh=-1, activeRemain=0, activeAt=0, draft=null, lastPumpAbsMs=0;
 var CFG_KEY='mqtt_dash_v2', TAB_KEY='mqtt_dash_tab';
-var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'c90294a7be154afb80b9d63900da8f4a',pass:'c90294a7be154afb80b9d63900da8f4a',token:'',sec:15};
+var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'c90294a7be154afb80b9d63900da8f4a',pass:'c90294a7be154afb80b9d63900da8f4a',token:''};
 var cfg=DEF;
 
 function $(s){ return document.querySelector(s); }
 function el(t,c,txt){ var e=document.createElement(t); if(c) e.className=c; if(txt!=null) e.textContent=txt; return e; }
 function pad2(n){ return n<10?'0'+n:''+n; }
 function hhmmss(sec){ sec=+sec||0; var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60; return h>0?(h+':'+pad2(m)+':'+pad2(s)):(pad2(m)+':'+pad2(s)); }
-function clockNow(){ var d=new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
+/* 统一按北京时间 UTC+8 显示，不依赖手机本地时区 */
+function bjTime(ms){ var d=new Date((ms==null?Date.now():ms)+8*3600000); return pad2(d.getUTCHours())+':'+pad2(d.getUTCMinutes())+':'+pad2(d.getUTCSeconds()); }
+function bjFull(ms){ var d=new Date(ms+8*3600000); return pad2(d.getUTCMonth()+1)+'-'+pad2(d.getUTCDate())+' '+bjTime(ms); }
+function ago(sec){ if(sec<60) return sec+' 秒前'; if(sec<3600) return Math.floor(sec/60)+' 分前'; return Math.floor(sec/3600)+' 小时前'; }
+function fmtGap(sec){ sec=Math.max(0,+sec||0); if(sec<60) return sec+' 秒'; if(sec<3600) return Math.floor(sec/60)+' 分 '+pad2(sec%60)+' 秒'; return Math.floor(sec/3600)+' 小时 '+pad2(Math.floor(sec%3600/60))+' 分'; }
+/* 状态帧 30 秒才来一次，本地每秒递推：在线时长 / 下次采集 / 最近更新 / 浇水倒计时 */
+function tick(){
+  $('#dNow').textContent=bjTime();
+  if(!lastStateAt){
+    $('#dSeen').textContent='— · 等待上报';
+    if(lastPumpAbsMs && $('#logGap')) $('#logGap').textContent='上次浇水：'+bjFull(lastPumpAbsMs)+' · 距今 '+fmtGap(Math.floor((Date.now()-lastPumpAbsMs)/1000));
+    return;
+  }
+  var d=Math.max(0,Math.floor((Date.now()-lastStateAt)/1000));
+  $('#dUp').textContent=hhmmss(lastUp+d);
+  $('#dSeen').textContent=bjTime(lastStateAt)+' · '+ago(d);
+  if(lastNext>0) $('#dNext').textContent=hhmmss(Math.max(0,lastNext-d));
+  if(activeCh>=0 && d<60){
+    var rem=Math.max(0,activeRemain-Math.floor((Date.now()-activeAt)/1000));
+    if(rem>0){
+      var txt='通道 '+(activeCh+1)+' 浇水中 · 剩余 '+hhmmss(rem);
+      $('#subline').textContent='6 路 · '+txt;
+      $('#stripTxt').innerHTML='<b>'+esc(txt)+'</b>';
+    }else{
+      activeCh=-1;
+      $('#subline').textContent='6 路 · 空闲';
+      $('#stripTxt').textContent='空闲 · 等待下一次采集';
+      $('#strip').className='strip';
+    }
+  }
+  if(lastPumpAbsMs && $('#logGap')) $('#logGap').textContent='上次浇水：'+bjFull(lastPumpAbsMs)+' · 距今 '+fmtGap(Math.floor((Date.now()-lastPumpAbsMs)/1000));
+}
 function toast(m){ var t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove('on');},2200); }
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
@@ -285,7 +317,7 @@ function readCfg(){
   var s=null;
   try{ s=JSON.parse(localStorage.getItem(CFG_KEY)||'null'); }catch(e){}
   /* 旧版缓存里的 token 常被误填成热点密码，迁移时丢弃，避免指令被设备静默忽略 */
-  if(!s){ try{ var o=JSON.parse(localStorage.getItem('mqtt_dash')||'null'); if(o) s={broker:o.broker,user:o.user,pass:o.pass,devid:o.devid,token:'',sec:o.sec}; }catch(e){} }
+  if(!s){ try{ var o=JSON.parse(localStorage.getItem('mqtt_dash')||'null'); if(o) s={broker:o.broker,user:o.user,pass:o.pass,devid:o.devid,token:''}; }catch(e){} }
   var c={}; for(var k in DEF) c[k]=DEF[k];
   if(s) for(var k2 in DEF){ if(s[k2]!=null && s[k2]!=='') c[k2]=s[k2]; }
   if(/bemfa\.com:8444/i.test(c.broker)) c.broker=DEF.broker;
@@ -294,12 +326,12 @@ function readCfg(){
 }
 function fillForm(){
   $('#broker').value=cfg.broker; $('#user').value=cfg.user; $('#pass').value=cfg.pass;
-  $('#devid').value=cfg.devid; $('#token').value=cfg.token; $('#sec').value=cfg.sec;
+  $('#devid').value=cfg.devid; $('#token').value=cfg.token;
   $('#dDev').textContent=cfg.devid;
 }
 function formToCfg(){
   var c={broker:$('#broker').value.trim(),user:$('#user').value.trim(),pass:$('#pass').value,
-         devid:$('#devid').value.trim(),token:$('#token').value.trim(),sec:$('#sec').value};
+         devid:$('#devid').value.trim(),token:$('#token').value.trim()};
   if(/bemfa\.com:8444/i.test(c.broker)){ c.broker=DEF.broker; $('#broker').value=c.broker; }
   return c;
 }
@@ -360,36 +392,52 @@ function updateCard(i){
 function renderAll(){ for(var i=0;i<N;i++) updateCard(i); }
 function chName(i){ return CH[i] && CH[i].name ? CH[i].name : ('通道 '+(i+1)); }
 
-/* ---------- 通道详情弹层 ---------- */
+/* ---------- 通道详情弹层：先编辑草稿，点保存才下发 ---------- */
 function openSheet(i){
   sheetCh=i; var c=CH[i], b=$('#sheetBody'); b.innerHTML='';
-  var h=el('h2'); h.innerHTML='通道 '+(i+1)+' <span class="chip '+(c.auto?'':'off')+'">'+(c.auto?'自动':'手动')+'</span>';
+  draft={name:c.name||'',auto:!!c.auto,thr:c.thr||30,maxSec:c.maxSec||15};
+  var h=el('h2');
+  h.innerHTML='<span style="flex:1">通道 '+(i+1)+'</span>'+
+    '<button class="btn ghost sm" id="sClose">关闭</button>'+
+    '<button class="btn sm" id="sSave">保存</button>';
   b.appendChild(h); b.appendChild(el('div','s-sub',c.name||'未命名'));
   var rows=[];
-  rows.push('<div class="frow"><span>名称</span><input id="sName" type="text" maxlength="7" placeholder="未命名" value="'+esc(c.name)+'" style="flex:1;min-width:0;text-align:right;border:0;background:transparent;font-size:14px;color:#1b2430;outline:none"></div>');
-  rows.push('<div class="frow"><span>自动浇水</span><label class="sw"><input type="checkbox" id="sAuto"'+(c.auto?' checked':'')+'><i></i></label></div>');
-  rows.push('<div class="slider-block"><div class="lb"><span>目标湿度阈值</span><b id="sThrV">'+c.thr+'%</b></div><input type="range" id="sThr" min="5" max="90" step="1" value="'+c.thr+'"></div>');
+  rows.push('<div class="frow"><span>名称</span><input id="sName" type="text" maxlength="7" placeholder="未命名" value="'+esc(draft.name)+'" style="flex:1;min-width:0;text-align:right;border:0;background:transparent;font-size:14px;color:#1b2430;outline:none"></div>');
+  rows.push('<div class="frow"><span>自动浇水</span><label class="sw"><input type="checkbox" id="sAuto"'+(draft.auto?' checked':'')+'><i></i></label></div>');
+  rows.push('<div class="slider-block"><div class="lb"><span>目标湿度阈值</span><b id="sThrV">'+draft.thr+'%</b></div><input type="range" id="sThr" min="5" max="90" step="1" value="'+draft.thr+'"></div>');
   rows.push('<div class="frow"><span>当前湿度</span><b>'+(c.flt?'故障':(c.seen?c.pct+'%':'—'))+'</b></div>');
   rows.push('<div class="frow"><span>原始读数</span><b>'+(c.seen?c.raw:'—')+'</b></div>');
-  rows.push('<div class="slider-block"><div class="lb"><span>单次时长</span><b id="sSecV">'+c.maxSec+'s</b></div><input type="range" id="sSec" min="5" max="120" step="5" value="'+c.maxSec+'"></div>');
+  rows.push('<div class="slider-block"><div class="lb"><span>单次时长</span><b id="sSecV">'+draft.maxSec+'s</b></div><input type="range" id="sSec" min="5" max="120" step="5" value="'+draft.maxSec+'"></div>');
   rows.push('<div class="frow"><span>最小间隔</span><b>'+Math.round(c.gap/60)+' 分钟</b></div>');
   rows.push('<div class="frow"><span>干点 / 湿点 raw</span><b>'+c.dry+' / '+c.wet+'</b></div>');
   rows.push('<div style="display:flex;gap:8px;padding:12px 0 4px"><button class="btn ghost sm" id="sCalDry" style="flex:1">记为干点</button><button class="btn ghost sm" id="sCalWet" style="flex:1">记为湿点</button></div>');
-  rows.push('<div style="padding:10px 0 0"><button class="btn" id="sWater" style="width:100%">立即浇 '+c.maxSec+' 秒</button></div>');
+  rows.push('<div style="padding:10px 0 0"><button class="btn" id="sWater" style="width:100%">立即浇 '+draft.maxSec+' 秒</button></div>');
   rows.push('<div class="hint">标定取最近一次采样读数，先点「立即补采一轮」再记更准。</div>');
   b.insertAdjacentHTML('beforeend',rows.join(''));
-  $('#sName').addEventListener('change',function(){ var v=this.value.trim(); CH[i].name=v; send({a:'set',ch:i,name:v}); renderAll(); toast('名称已发送'); });
-  $('#sAuto').addEventListener('change',function(){ CH[i].auto=this.checked; send({a:'auto',ch:i,on:this.checked?1:0}); renderAll(); closeSheet(); });
-  $('#sThr').addEventListener('input',function(){ $('#sThrV').textContent=this.value+'%'; CH[i].thr=+this.value; });
-  $('#sThr').addEventListener('change',function(){ send({a:'set',ch:i,thr:+this.value}); toast('阈值已发送'); });
-  $('#sSec').addEventListener('input',function(){ $('#sSecV').textContent=this.value+'s'; CH[i].maxSec=+this.value; });
-  $('#sSec').addEventListener('change',function(){ send({a:'set',ch:i,maxSec:+this.value}); toast('时长已发送'); });
-  $('#sCalDry').addEventListener('click',function(){ send({a:'cal',ch:i,wet:0}); toast('干点已记录'); closeSheet(); });
-  $('#sCalWet').addEventListener('click',function(){ send({a:'cal',ch:i,wet:1}); toast('湿点已记录'); closeSheet(); });
-  $('#sWater').addEventListener('click',function(){ onWater(i); closeSheet(); });
+  $('#sName').addEventListener('input',function(){ draft.name=this.value.trim(); });
+  $('#sAuto').addEventListener('change',function(){ draft.auto=this.checked; });
+  $('#sThr').addEventListener('input',function(){ draft.thr=+this.value; $('#sThrV').textContent=this.value+'%'; });
+  $('#sSec').addEventListener('input',function(){ draft.maxSec=+this.value; $('#sSecV').textContent=this.value+'s'; $('#sWater').textContent='立即浇 '+this.value+' 秒'; });
+  $('#sClose').addEventListener('click',closeSheet);
+  $('#sSave').addEventListener('click',saveSheet);
+  $('#sCalDry').addEventListener('click',function(){ send({a:'cal',ch:i,wet:0}); toast('干点已记录'); });
+  $('#sCalWet').addEventListener('click',function(){ send({a:'cal',ch:i,wet:1}); toast('湿点已记录'); });
+  $('#sWater').addEventListener('click',function(){ onWater(i,draft.maxSec); });
   $('#mask').classList.add('on'); $('#sheet').classList.add('on');
 }
-function closeSheet(){ sheetCh=-1; $('#mask').classList.remove('on'); $('#sheet').classList.remove('on'); }
+function saveSheet(){
+  if(sheetCh<0||!draft) return;
+  var i=sheetCh, c=CH[i], d=draft, o={a:'set',ch:i}, changed=false;
+  if(d.name!==(c.name||'')){ o.name=d.name; changed=true; }
+  if(d.auto!==!!c.auto){ o.auto=d.auto?1:0; changed=true; }
+  if(d.thr!==(c.thr||30)){ o.thr=d.thr; changed=true; }
+  if(d.maxSec!==(c.maxSec||15)){ o.maxSec=d.maxSec; changed=true; }
+  if(!changed){ closeSheet(); toast('没有改动'); return; }
+  if(!send(o)) return;
+  c.name=d.name; c.auto=d.auto; c.thr=d.thr; c.maxSec=d.maxSec;
+  renderAll(); chOptions(); closeSheet(); toast('设置已保存');
+}
+function closeSheet(){ sheetCh=-1; draft=null; $('#mask').classList.remove('on'); $('#sheet').classList.remove('on'); }
 
 /* ---------- 定时任务 ---------- */
 function renderTasks(){
@@ -425,15 +473,36 @@ function chOptions(){
   if(cur) s.value=cur;
 }
 
-/* ---------- 日志 ---------- */
+/* ---------- 日志：北京时间 + 上次浇水间隔 ---------- */
+function logWallTime(it){
+  /* 日志的 t 是设备 uptime 秒，与状态帧的 up 同源；
+     用「收到状态帧的时刻 - up」反推开机时刻，再加 t 得到墙上时间 */
+  if(!bootWallMs) return hhmmss(it.t);
+  return bjTime(bootWallMs+(+it.t||0)*1000);
+}
 function renderLogs(items){
+  LOGS=items||[];
   var box=$('#logList'); box.innerHTML='';
   if(!items||!items.length){ box.appendChild(el('div','empty','暂无日志')); return; }
-  items.slice().reverse().forEach(function(it){
+  var asc=items.slice(), lastT=null, gaps={}, newest=null;
+  asc.forEach(function(it){
+    if(it.c && it.c.indexOf('开始浇水')>=0){
+      var t=+it.t||0;
+      if(lastT!=null) gaps[it.s]=fmtGap(t-lastT);
+      lastT=t; newest=t;
+    }
+  });
+  lastPumpAbsMs=(newest!=null && bootWallMs)?(bootWallMs+newest*1000):0;
+  if(lastPumpAbsMs){
+    var g=el('div','hint','上次浇水：'+bjFull(lastPumpAbsMs)+' · 距今 '+fmtGap(Math.floor((Date.now()-lastPumpAbsMs)/1000)));
+    g.id='logGap'; g.style.textAlign='left'; box.appendChild(g);
+  }
+  asc.slice().reverse().forEach(function(it){
     var d=el('div','log');
     var dot=el('span','d '+(it.kind||''));
-    var t=el('span','t',hhmmss(it.t));
-    var x=el('span','',it.c+(it.ch>=0?(' · '+chName(it.ch)):''));
+    var t=el('span','t',logWallTime(it));
+    var extra=gaps[it.s]?(' · 距上次浇水 '+gaps[it.s]):'';
+    var x=el('span','',it.c+(it.ch>=0?(' · '+chName(it.ch)):'')+extra);
     d.appendChild(t); d.appendChild(dot); d.appendChild(x); box.appendChild(d);
   });
 }
@@ -445,8 +514,9 @@ function send(o){
   client.publish(mqTopic('cmd'),JSON.stringify(o),{qos:0,retain:false});
   return true;
 }
-function onWater(i){
-  var sec=clamp(+$('#sec').value||15,1,300);
+function onWater(i,override){
+  var c=CH[i]||{};
+  var sec=clamp(+(override!=null?override:c.maxSec)||15,1,300);
   if(send({a:'start',ch:i,s:sec})) toast(chName(i)+' 浇水 '+sec+'s');
 }
 
@@ -472,9 +542,12 @@ function applyState(s){
   $('#dIp').textContent=s.ip||'—';
   $('#dRssi').textContent=s.rssi? s.rssi+' dBm':'—';
   $('#dHeap').textContent=s.heap? Math.round(s.heap/1024)+' KB':'—';
-  $('#dUp').textContent=hhmmss(s.up);
-  $('#dNext').textContent=s.next? hhmmss(s.next):'—';
-  $('#dSeen').textContent=clockNow();
+  lastUp=+s.up||0; lastNext=+s.next||0; bootWallMs=Date.now()-lastUp*1000;
+  /* 日志帧可能比状态帧先到，当时还不知道开机时刻，补算后重画一次 */
+  if(LOGS.length) renderLogs(LOGS);
+  activeCh=(s.active&&s.active.ch>=0&&s.active.ch<N)?s.active.ch:-1;
+  activeRemain=s.active?(+s.active.remain||0):0; activeAt=Date.now();
+  tick();
   if(s.cyc) $('#cycSel').value=String(s.cyc);
   renderAll(); chOptions();
 }
@@ -506,7 +579,7 @@ function connect(){
   var opt={clientId:u||('dash_'+Math.random().toString(16).slice(2,10)),clean:true,reconnectPeriod:4000,connectTimeout:15000};
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
-  gotState=false; lastStateAt=0; clearTimeout(onlineTimer);
+  gotState=false; lastStateAt=0; bootWallMs=0; LOGS=[]; activeCh=-1; clearTimeout(onlineTimer);
   /* 状态周期最长 30 秒。avail 的 retain 可能是设备掉线后残留的 online，
      不能拿它当在线证据，一律以是否收到状态帧为准。 */
   onlineTimer=setTimeout(function(){
@@ -535,7 +608,7 @@ function connect(){
     try{
       var s=JSON.parse(payload.toString());
       if(s.k==='t'){ TASKS=s.tasks||[]; renderTasks(); }
-      else if(s.k==='l'){ renderLogs(s.items); }
+      else if(s.k==='l'){ renderLogs(s.items||[]); }
       else applyState(s);
     }catch(e){}
   });
@@ -555,6 +628,7 @@ function switchTab(t){
 }
 
 initChannels(); buildGrid(); renderAll(); chOptions(); toggleTaskRows();
+setInterval(tick,1000); tick();
 /* 与局域网操作页一致：整张卡片点一下打开该通道详情；内部按钮和开关不触发 */
 $('#grid').addEventListener('click',function(ev){
   if(!ev.target || !ev.target.closest) return;
@@ -565,6 +639,7 @@ $('#grid').addEventListener('click',function(ev){
 /* 曾在线但停止上报（断电 / 掉回 AP 热点）时，60 秒内自动标离线 */
 setInterval(function(){
   if(!connected || !lastStateAt || Date.now()-lastStateAt<60000) return;
+  activeCh=-1;
   $('#dAvail').textContent='离线';
   $('#subline').textContent='6 路 · 设备未上线';
   $('#stripTxt').textContent='设备停止上报 · 检查供电与 WiFi';
