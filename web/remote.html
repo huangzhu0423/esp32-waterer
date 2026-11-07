@@ -51,7 +51,8 @@ body{background:#f4f6fa;color:#16202e;font:15px/1.45 system-ui,-apple-system,"Se
 .strip b{color:#16202e;font-weight:600}
 .strip .grow{flex:1}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.card{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:14px 11px 11px;display:flex;flex-direction:column;align-items:center;gap:7px;position:relative;transition:border-color .2s,box-shadow .2s}
+.card{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:14px 11px 11px;display:flex;flex-direction:column;align-items:center;gap:7px;position:relative;cursor:pointer;transition:border-color .2s,box-shadow .2s,transform .12s}
+.card:active{transform:scale(.985)}
 .card.run{border-color:#bfd4ff;box-shadow:0 0 0 3px #eef4ff}
 .card.fault{opacity:.6}
 .ring{position:relative;width:78px;height:78px}
@@ -553,6 +554,13 @@ function switchTab(t){
 }
 
 initChannels(); buildGrid(); renderAll(); chOptions(); toggleTaskRows();
+/* 与局域网操作页一致：整张卡片点一下打开该通道详情；内部按钮和开关不触发 */
+$('#grid').addEventListener('click',function(ev){
+  if(!ev.target || !ev.target.closest) return;
+  if(ev.target.closest('button,label,input')) return;
+  var card=ev.target.closest('.card');
+  if(card) openSheet(+card.dataset.i);
+});
 importHash();
 cfg=readCfg(); fillForm();
 
