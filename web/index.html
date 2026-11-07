@@ -47,7 +47,8 @@ body{background:#f4f6fa;color:#16202e;font:15px/1.45 system-ui,-apple-system,"Se
 .ring .val{fill:none;stroke:#2563eb;stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .5s,stroke .3s}
 .ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:650;letter-spacing:-.2px}
 .ring .num i{font-size:10px;font-style:normal;font-weight:500;color:#9aa7b6;margin-left:1px}
-.nm{font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px}
+.nm{font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px;max-width:100%}
+.nm .nmT{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:52px}
 .dt{font-size:11px;color:#9aa7b6;margin-top:-4px;font-variant-numeric:tabular-nums}
 .gear{position:absolute;top:5px;right:5px;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:#b3bec9;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .gear:hover{background:#f2f5fa;color:#5b6b80}
@@ -246,12 +247,12 @@ function toPct(c){
 
 /* ---------- 初始化通道 ---------- */
 var SEED = [
-  {raw:2410, auto:true,  thr:30},
-  {raw:2980, auto:true,  thr:30},
-  {raw:1980, auto:true,  thr:35},
-  {raw:2600, auto:true,  thr:30},
-  {raw:3400, auto:false, thr:25},
-  {raw:55,   auto:false, thr:30, fault:1}
+  {raw:2410, auto:true,  thr:30, name:'绿萝'},
+  {raw:2980, auto:true,  thr:30, name:'小番茄'},
+  {raw:1980, auto:true,  thr:35, name:'薄荷'},
+  {raw:2600, auto:true,  thr:30, name:'罗勒'},
+  {raw:3400, auto:false, thr:25, name:'迷迭香'},
+  {raw:55,   auto:false, thr:30, fault:1, name:'生菜'}
 ];
 function initChannels(){
   CH = [];
@@ -261,7 +262,7 @@ function initChannels(){
       i:i, raw:s.raw, pct:0, auto:!!s.auto, thr:s.thr||30,
       maxSec:15, minGapSec:30,
       dryRaw:2800, wetRaw:1150,
-      fault:s.fault||0, todaySec:0, lastRun:0
+      fault:s.fault||0, name:s.name||'', todaySec:0, lastRun:0
     };
     c.pct = toPct(c);
     CH.push(c);
@@ -279,7 +280,7 @@ function buildGrid(){
       '<circle class="val" cx="32" cy="32" r="26" stroke-dasharray="'+RING_C.toFixed(1)+'" stroke-dashoffset="'+RING_C.toFixed(1)+'"></circle></svg>'+
       '<div class="num"><span class="p">0</span><i>%</i></div>';
     var gear = el('button','gear','\u22ef'); gear.dataset.act='gear'; gear.dataset.i=i;
-    var nm = el('div','nm'); nm.innerHTML = '<span>通道 '+(i+1)+'</span>';
+    var nm = el('div','nm'); nm.innerHTML = '<span class="nmT">通道 '+(i+1)+'</span>';
     var chip = el('span','chip auto','自动'); chip.dataset.role = 'chip';
     nm.appendChild(chip);
     var dt = el('div','dt','raw 0');
@@ -299,6 +300,8 @@ function updateCard(i){
   val.style.strokeDashoffset = off.toFixed(1);
   val.style.stroke = c.fault ? '#d7dfe9' : (pct < c.thr ? '#e0a300' : '#2563eb');
   card.querySelector('.num .p').textContent = c.fault ? '--' : pct;
+  var nmT = card.querySelector('.nmT');
+  if(nmT) nmT.textContent = c.name ? (i+1)+' '+c.name : '通道 '+(i+1);
   card.querySelector('.dt').textContent = c.fault ? ('raw '+c.raw+' · '+(c.fault===5?'无供电':'断线')) : 'raw '+c.raw;
 
   var chip = card.querySelector('.chip');
@@ -392,6 +395,12 @@ function renderTasks(){
 }
 
 /* ---------- 底部设置弹层 ---------- */
+function escAttr(s){
+  return String(s||'').replace(/[&<>"]/g, function(ch){
+    return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[ch];
+  });
+}
+
 function openSheet(i){
   sheetCh = i;
   var c = CH[i];
@@ -402,6 +411,8 @@ function openSheet(i){
   b.appendChild(el('div','s-sub','实时湿度和校准都在这里调'));
 
   var rows = [];
+
+  rows.push('<div class="frow"><span>植物名称</span><input id="sName" type="text" maxlength="7" placeholder="未命名" value="'+escAttr(c.name)+'" style="flex:1;min-width:0;text-align:right;border:0;background:transparent;font-size:14px;color:#1b2430;outline:none"></div>');
 
   rows.push('<div class="frow"><span>自动浇水</span><label class="sw"><input type="checkbox" id="sAuto"'+(c.auto?' checked':'')+'><i></i></label></div>');
 
@@ -425,6 +436,13 @@ function openSheet(i){
 
   b.insertAdjacentHTML('beforeend', rows.join(''));
 
+  $('#sName').addEventListener('change', function(){
+    var v = this.value.trim();
+    CH[i].name = v;
+    if(live) api('/api/channel', {ch:i, name:v});
+    addLog('通道 '+(i+1)+' 命名为 '+(v||'（未命名）'), '', i);
+    renderChannels();
+  });
   $('#sAuto').addEventListener('change', function(){
     CH[i].auto = this.checked;
     if(live) api('/api/channel', {ch:i, auto:CH[i].auto?1:0});
@@ -631,6 +649,7 @@ function applyState(s){
   for(var i=0;i<N && i<s.ch.length;i++){
     var d = s.ch[i], c = CH[i];
     c.raw = d.raw; c.pct = d.pct; c.fault = d.flt||0;
+    if(d.name != null) c.name = d.name;
     if(d.auto != null) c.auto = !!d.auto;
     if(d.dry != null) c.dryRaw = d.dry;   /* 标定后由固件回传，前端不自己猜 */
     if(d.wet != null) c.wetRaw = d.wet;

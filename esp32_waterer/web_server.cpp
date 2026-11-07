@@ -161,11 +161,12 @@ static void handleState(void) {
   for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
     const ChannelCfg& c = storeCfg().ch[i];
     n = app(b, n, sizeof(b),
-            "%s{\"i\":%d,\"type\":%d,\"raw\":%d,\"pct\":%d,\"flt\":%d,\"auto\":%d,\"thr\":%d,"
-            "\"run\":%d,\"q\":%d,\"bud\":%lu,\"dry\":%d,\"wet\":%d}",
+            "%s{\"i\":%d,\"type\":%d,\"name\":\"%s\",\"raw\":%d,\"pct\":%d,\"flt\":%d,"
+            "\"auto\":%d,\"thr\":%d,\"run\":%d,\"q\":%d,\"bud\":%lu,\"dry\":%d,\"wet\":%d}",
             (i ? "," : ""),
             (int)i,
             (int)c.type,
+            c.name,
             (int)sensorsRaw(i),
             (int)sensorsPct(i),
             (int)sensorsFault(i),
@@ -240,6 +241,27 @@ static void handleChannel(void) {
     if (v < 0) v = 0;
     if (v > 7200) v = 7200;
     c.minGapSec = (uint16_t)v;
+  }
+  if (body.indexOf("\"name\"") >= 0) {
+    char nm[CH_NAME_LEN];
+    if (jStr(body, "name", nm, sizeof(nm))) {
+      /* 逐字符复制，只收完整的多字节字符：
+         直接在字节上截断会把一个汉字切成两半，产生非法 UTF-8，
+         网页显示成乱码方块，而且存进去就再也没法改回来了。 */
+      char* d = c.name;
+      const char* limit = c.name + sizeof(c.name) - 1;
+      for (const char* s = nm; *s; ) {
+        unsigned char uc = (unsigned char)*s;
+        if (uc == '"' || uc == '\\') { s++; continue; }   /* 会破坏 JSON 的字符直接丢掉 */
+        uint8_t len = 1;
+        if (uc >= 0xF0)      len = 4;
+        else if (uc >= 0xE0) len = 3;
+        else if (uc >= 0xC0) len = 2;
+        if (d + len > limit) break;                        /* 放不下就整个字不写 */
+        for (uint8_t k = 0; k < len && s[k]; k++) *d++ = *s++;
+      }
+      *d = 0;
+    }
   }
 
   storeTouch();

@@ -168,10 +168,11 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
 #define NOISY_LIMIT_PER_MIN       12    /* 一分钟丢弃样本超过 12 次判为噪声故障 */
 
 /* ================= 默认配置（首次上电 / 配置损坏时使用） ================= */
-/* 2 = 通道结构加入 type 字段（湿度/pH）。
+/* 2 = 通道结构加入 type 字段（湿度/pH）
+ * 3 = 通道结构加入 name 备注字段
  * 结构体大小变了，老设备读到旧 blob 会因长度不符自动回落默认值，
  * 属于预期行为——升级后需要重新配网、重新校准。 */
-#define CFG_VERSION                2
+#define CFG_VERSION                3
 #define DEF_THR_PCT               30
 #define DEF_MAX_SEC               15
 #define DEF_MIN_GAP_SEC          300

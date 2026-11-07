@@ -89,6 +89,11 @@ enum SensorType : uint8_t {
   SENS_PH    = 1    /* 土壤 pH，电极必须常供电保持极化，响应以分钟计 */
 };
 
+/* ---------- 通道名称 ----------
+ * UTF-8 一个汉字占 3 字节，24 字节能放 7 个汉字 + 结尾 0，
+ * 够写「绿萝」「小番茄」这类名字。 */
+#define CH_NAME_LEN 24
+
 /* ---------- 单通道可配置项 ---------- */
 struct ChannelCfg {
   uint8_t  autoOn;      /* 0/1 */
@@ -98,6 +103,7 @@ struct ChannelCfg {
   uint16_t minGapSec;   /* 两次自动浇水的最小间隔 */
   uint16_t dryRaw;      /* 低点原始读数：湿度=干土（大），pH=酸液（小） */
   uint16_t wetRaw;      /* 高点原始读数：湿度=泡水（小），pH=碱液（大） */
+  char     name[CH_NAME_LEN];  /* 备注名，空串表示未命名，界面退回显示"通道 N" */
 };
 
 /* ---------- 定时任务 ---------- */
