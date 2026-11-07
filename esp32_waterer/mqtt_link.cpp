@@ -51,9 +51,34 @@ static int app2(char* b, int n, size_t cap, const char* fmt, ...) {
   return n + w;
 }
 
-/* ================= 主题名 ================= */
+/* ================= 主题名 =================
+ * 巴法云(bemfa.com)不是标准层级主题 broker：
+ *   1) 主题名只允许字母/数字，斜杠与下划线都会被拒(40009)；
+ *   2) 主题必须先在控制台或 API 创建，否则订阅返回 0x80；
+ *   3) "cmd" 后缀被平台保留，订阅同样被拒，改用 "ctrl"。
+ * 因此巴法云下把 base 去掉非字母数字后拼接子主题，例如
+ *   aw_AF48 -> awAF48state / awAF48avail / awAF48ctrl
+ * 其他 broker(EMQX/自建)仍用标准层级主题 aw_AF48/state 等。 */
+static bool bemfaMode(void) {
+  return strstr(s_host, "bemfa.com") != nullptr;
+}
+
 static void topicName(char* out, size_t n, const char* sub) {
-  snprintf(out, n, "%s/%s", s_base, sub);
+  if (!bemfaMode()) {
+    snprintf(out, n, "%s/%s", s_base, sub);
+    return;
+  }
+  char flat[MQTT_BASE_MAX_LEN + 1];
+  size_t j = 0;
+  for (size_t i = 0; s_base[i] && j < sizeof(flat) - 1; ++i) {
+    unsigned char c = (unsigned char)s_base[i];
+    if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+      flat[j++] = (char)c;
+    }
+  }
+  flat[j] = 0;
+  const char* s = (strcmp(sub, "cmd") == 0) ? "ctrl" : sub;
+  snprintf(out, n, "%s%s", flat, s);
 }
 
 /* ================= 命令回调 ================= */

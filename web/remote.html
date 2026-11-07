@@ -139,6 +139,15 @@ var client = null;
 var connected = false;
 var prefix = "";
 var token = "";
+var bemfa = false;   /* 巴法云需扁平主题（主题名只允许字母数字、须预建） */
+
+/* 巴法云: aw_AF48 -> awAF48state / awAF48avail / awAF48ctrl
+   其他 broker: aw_AF48/state 等标准层级主题 */
+function mqTopic(sub){
+  if(!bemfa) return prefix+'/'+sub;
+  var flat=prefix.replace(/[^A-Za-z0-9]/g,'');
+  return flat+(sub==='cmd'?'ctrl':sub);
+}
 
 function $(s){ return document.querySelector(s); }
 function el(t,c,txt){ var e=document.createElement(t); if(c) e.className=c; if(txt!=null) e.textContent=txt; return e; }
@@ -225,7 +234,7 @@ function send(ch, a, extra){
   if(!connected||!client){ toast('尚未连接'); return; }
   var o={t:token, ch:ch, a:a};
   if(extra) for(var k in extra) o[k]=extra[k];
-  client.publish(prefix+'/cmd', JSON.stringify(o), {qos:0,retain:false});
+  client.publish(mqTopic('cmd'), JSON.stringify(o), {qos:0,retain:false});
 }
 function onWater(i){ var sec=clamp(+$('#sec').value||15,1,300); send(i,'start',{s:sec}); toast('通道'+(i+1)+' 浇水 '+sec+'s'); }
 function onStop(i){ send(i,'stop'); toast('通道'+(i+1)+' 停止'); }
@@ -267,13 +276,14 @@ function connect(){
   var rawDev=($('#devid').value.trim()||'aw_xxxx').replace(/\/+$/,'');
   var mDev=rawDev.match(/^aw_(.+)$/i);
   prefix=mDev ? ('aw_'+mDev[1].toUpperCase()) : rawDev;
+  bemfa=/bemfa\.com/i.test(url);
   token=$('#token').value.trim();
   var u=$('#user').value.trim(), p=$('#pass').value;
   var opt={clientId: u || ('dash_'+Math.random().toString(16).slice(2,10)),clean:true,reconnectPeriod:4000,connectTimeout:15000};
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
   client=mqtt.connect(url,opt);
-  client.on('connect',function(){ setConn(true); client.subscribe(prefix+'/state',{qos:0}); client.subscribe(prefix+'/avail',{qos:0}); });
+  client.on('connect',function(){ setConn(true); client.subscribe(mqTopic('state'),{qos:0}); client.subscribe(mqTopic('avail'),{qos:0}); });
   client.on('reconnect',function(){ setConn(false,'重连中…'); });
   client.on('close',function(){ setConn(false,'已断开'); });
   client.on('offline',function(){ setConn(false,'离线'); });
@@ -281,7 +291,7 @@ function connect(){
   client.on('message',function(topic,payload){
     try{
       var s=JSON.parse(payload.toString());
-      if(topic===prefix+'/state') applyState(s);
+      if(topic===mqTopic('state')) applyState(s);
     }catch(e){}
   });
 }
