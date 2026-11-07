@@ -69,6 +69,7 @@ const char* logText(uint8_t code) {
     case LOG_TASK_SKIP:       return "定时任务错过窗口，已丢弃";
     case LOG_LOCKOUT:         return "检测到带泵复位，进入锁定";
     case LOG_CFG_BAD:         return "配置校验失败，已回退默认值";
+    case LOG_MQTT:            return "MQTT 连接状态变化";
     default:                  return "未知事件";
   }
 }
@@ -94,6 +95,7 @@ const char* logKind(uint8_t code) {
     case LOG_PWR_FAIL:
     case LOG_WIFI_FAIL:
     case LOG_LOCKOUT:
+    case LOG_MQTT:
       return "err";
     default:
       return "";

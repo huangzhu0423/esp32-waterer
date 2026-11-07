@@ -24,6 +24,7 @@
 #include "scheduler.h"
 #include "net.h"
 #include "web_server.h"
+#include "mqtt_link.h"
 
 void setup(void) {
   /* 第一件事：把所有水泵脚拉到低电平。
@@ -53,6 +54,7 @@ void setup(void) {
   schedBegin();
   netBegin();
   webBegin();
+  mqttBegin();
   healthWatchdogBegin();
 
   logAdd(LOG_BOOT, -1);
@@ -88,6 +90,7 @@ void loop(void) {
   sensorsTick(now, pumpEdgeRecent(now));
   schedTick(now);
   webTick();
+  mqttTick(now);
   storeTick(now);
 
   healthWatchdogFeed();

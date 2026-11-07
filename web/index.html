@@ -202,6 +202,22 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       <div class="hint">间隔短响应快，继电器动作也频繁。浇水后会立刻补采一次，不受这个间隔限制。</div>
     </div>
     <div class="panel">
+      <h3>远程 MQTT</h3>
+      <div class="row"><span class="grow">启用远程控制</span><label class="sw"><input type="checkbox" id="mqEn"><i></i></label></div>
+      <div style="padding:8px 0 4px"><input type="text" id="mqHost" placeholder="服务器，如 broker.emqx.io"></div>
+      <div class="row"><span class="grow">端口</span><input type="number" id="mqPort" value="1883" min="1" max="65535" style="width:110px;text-align:center"></div>
+      <div style="padding:6px 0 4px"><input type="text" id="mqUser" placeholder="用户名（可空）" autocomplete="off"></div>
+      <div style="padding:6px 0 4px"><input type="password" id="mqPass" placeholder="密码（可空）" autocomplete="off"></div>
+      <div style="padding:6px 0 4px"><input type="text" id="mqToken" placeholder="指令令牌（建议填，防别人乱控）" autocomplete="off"></div>
+      <div style="padding:6px 0 4px"><input type="text" id="mqBase" placeholder="主题前缀（留空自动用 aw_XXXX）" autocomplete="off"></div>
+      <div style="display:flex;gap:8px;padding:10px 0">
+        <button class="btn ghost sm" id="mqBemfa">填入巴法云</button>
+        <button class="btn sm" id="mqSave" style="flex:1">保存</button>
+      </div>
+      <div class="row"><span class="grow">连接状态</span><b id="mqStat">—</b></div>
+      <div class="hint">启用后板子连上路由器就自动连 MQTT，手机在外网也能看湿度、浇水。命令必须带正确令牌，否则被忽略。巴法云是免费的国内服务，用它的 uid 填用户名/密码即可。</div>
+    </div>
+    <div class="panel">
       <h3>设备</h3>
       <div class="row"><span class="grow">工作模式</span><b id="dMode">—</b></div>
       <div class="row"><span class="grow">IP 地址</span><b id="dIp">—</b></div>
@@ -679,6 +695,12 @@ function applyState(s){
     else if(s.next != null) nx.textContent = Math.floor(s.next/60) + ' 分 ' + pad2(s.next%60) + ' 秒后';
     else nx.textContent = '即将开始';
   }
+  var ms = $('#mqStat');
+  if (ms) {
+    if (!s.mqtten) { ms.textContent = '未启用'; ms.style.color = '#7b8899'; }
+    else if (s.mqtt) { ms.textContent = '已连接'; ms.style.color = '#0F6E56'; }
+    else { ms.textContent = '未连接'; ms.style.color = '#e5484d'; }
+  }
   renderChannels();
 }
 
@@ -834,6 +856,50 @@ $('#cycSel').addEventListener('change', function(){
   });
 });
 
+/* MQTT 配置：读一次填进表单 */
+function loadMqtt(){
+  if(!live) return;
+  fetch('/api/mqtt').then(function(r){ return r.json(); }).then(function(d){
+    if(!d || !d.ok) return;
+    $('#mqEn').checked = !!d.en;
+    $('#mqHost').value = d.host || '';
+    $('#mqPort').value = d.port || 1883;
+    $('#mqUser').value = d.user || '';
+    $('#mqPass').value = d.pass || '';
+    $('#mqToken').value = d.token || '';
+    $('#mqBase').value = d.base || '';
+    var ms = $('#mqStat');
+    if(ms){
+      if(!d.en){ ms.textContent='未启用'; ms.style.color='#7b8899'; }
+      else if(d.connected){ ms.textContent='已连接'; ms.style.color='#0F6E56'; }
+      else { ms.textContent='未连接'; ms.style.color='#e5484d'; }
+    }
+  }).catch(function(){});
+}
+
+$('#mqBemfa').addEventListener('click', function(){
+  $('#mqHost').value = 'bemfa.com';
+  $('#mqPort').value = '9501';
+  toast('已填入巴法云，再把你的 uid 填到用户名/密码');
+});
+
+$('#mqSave').addEventListener('click', function(){
+  if(!live){ toast('预览模式下不可用'); return; }
+  var body = {
+    en: $('#mqEn').checked ? 1 : 0,
+    host: $('#mqHost').value.trim(),
+    port: (+$('#mqPort').value) || 1883,
+    user: $('#mqUser').value.trim(),
+    pass: $('#mqPass').value,
+    token: $('#mqToken').value.trim(),
+    base: $('#mqBase').value.trim()
+  };
+  api('/api/mqtt', body).then(function(r){
+    if(r && r.ok){ toast('已保存，板子正在连接'); loadMqtt(); }
+    else toast('保存失败');
+  });
+});
+
 /* ---------- 启动 ---------- */
 function boot(){
   initChannels();
@@ -856,6 +922,7 @@ function boot(){
     loadTasks();
     loadApPass();
     loadCycle();
+    loadMqtt();
     pollLogs();
   }).catch(function(){
     clearTimeout(to);

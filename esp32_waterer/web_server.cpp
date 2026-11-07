@@ -15,6 +15,13 @@
 #include "health.h"
 #include "logbuf.h"
 #include "net.h"
+#include "jsonutil.h"
+#include "mqtt_link.h"
+
+/* 沿用原有名字，底层走 jsonutil.h，避免代码里大量改名 */
+#define jInt   jUtilInt
+#define jBool  jUtilBool
+#define jStr   jUtilStr
 
 static WebServer s_http(80);
 static uint32_t  s_rebootAt = 0;
@@ -35,61 +42,9 @@ static int app(char* b, int n, size_t cap, const char* fmt, ...) {
   return n + w;
 }
 
-/* ================= 极简 JSON 取值 ================= */
-static bool jPos(const String& b, const char* key, int& p) {
-  String pat = "\"";
-  pat += key;
-  pat += "\":";
-  int i = b.indexOf(pat);
-  if (i < 0) return false;
-  p = i + (int)pat.length();
-  return true;
-}
-
-static long jInt(const String& b, const char* key, long def) {
-  int p;
-  if (!jPos(b, key, p)) return def;
-  int len = (int)b.length();
-  while (p < len && (b[p] == ' ' || b[p] == '\t')) p++;
-  bool neg = false;
-  if (p < len && b[p] == '-') { neg = true; p++; }
-  long v = 0;
-  bool any = false;
-  while (p < len && b[p] >= '0' && b[p] <= '9') {
-    v = v * 10 + (b[p] - '0');
-    p++;
-    any = true;
-  }
-  if (!any) return def;
-  return neg ? -v : v;
-}
-
-static bool jBool(const String& b, const char* key, bool def) {
-  String t = "\"";
-  t += key;
-  t += "\":true";
-  if (b.indexOf(t) >= 0) return true;
-  String f = "\"";
-  f += key;
-  f += "\":false";
-  if (b.indexOf(f) >= 0) return false;
-  return jInt(b, key, def ? 1 : 0) != 0;
-}
-
-static bool jStr(const String& b, const char* key, char* out, size_t n) {
-  String pat = "\"";
-  pat += key;
-  pat += "\":\"";
-  int i = b.indexOf(pat);
-  if (i < 0) return false;
-  int s = i + (int)pat.length();
-  int e = b.indexOf('"', s);
-  if (e < 0) return false;
-  String v = b.substring(s, e);
-  strncpy(out, v.c_str(), n - 1);
-  out[n - 1] = 0;
-  return true;
-}
+/* ================= 极简 JSON 取值 =================
+ * jInt / jBool / jStr 已移到 jsonutil.h（web_server 与 mqtt_link 共用），
+ * 这里通过宏别名沿用旧名字，避免改动下面几百行业务代码。 */
 
 static const char* errText(uint8_t r) {
   switch (r) {
@@ -133,7 +88,8 @@ static void handleState(void) {
 
   n = app(b, n, sizeof(b),
           "{\"ok\":1,\"fw\":\"%s\",\"up\":%lu,\"heap\":%lu,\"mode\":\"%s\",\"ip\":\"%s\","
-          "\"rssi\":%d,\"timeOk\":%d,\"q\":%d,\"lock\":%lu,\"samp\":%d,\"next\":%lu,",
+          "\"rssi\":%d,\"timeOk\":%d,\"q\":%d,\"lock\":%lu,\"samp\":%d,\"next\":%lu,"
+          "\"mqtten\":%d,\"mqtt\":%d,",
           FW_VERSION,
           (unsigned long)(nowMs / 1000UL),
           (unsigned long)ESP.getFreeHeap(),
@@ -144,7 +100,9 @@ static void handleState(void) {
           (int)schedQueueLen(),
           (unsigned long)healthLockRemainSec(nowMs),
           sensorsSampling() ? 1 : 0,
-          (unsigned long)(sensorsNextCycleMs(nowMs) / 1000UL));
+          (unsigned long)(sensorsNextCycleMs(nowMs) / 1000UL),
+          mqttEnabled() ? 1 : 0,
+          mqttConnected() ? 1 : 0);
 
   if (pumpIsActive()) {
     uint8_t src = pumpActiveSrc();
@@ -572,6 +530,44 @@ static void handleCycleSet(void) {
   sendJson(b);
 }
 
+/* ================= MQTT 远程控制配置 ================= */
+static void handleMqttGet(void) {
+  char b[640];
+  int n = 0;
+  n = app(b, n, sizeof(b),
+          "{\"ok\":1,\"en\":%d,\"host\":\"%s\",\"port\":%u,\"user\":\"%s\","
+          "\"pass\":\"%s\",\"token\":\"%s\",\"base\":\"%s\",\"connected\":%d}",
+          mqttCfgEnabled() ? 1 : 0,
+          mqttCfgHost(),
+          (unsigned)mqttCfgPort(),
+          mqttCfgUser(),
+          mqttCfgPass(),
+          mqttCfgToken(),
+          mqttCfgBase(),
+          mqttConnected() ? 1 : 0);
+  b[sizeof(b) - 1] = 0;
+  sendJson(b);
+}
+
+static void handleMqttSet(void) {
+  String body = s_http.arg("plain");
+  if (body.indexOf("\"en\"") >= 0) mqttCfgEnabledSet(jBool(body, "en", false));
+
+  char tmp[64];
+  if (jStr(body, "host", tmp, sizeof(tmp))) mqttCfgHostSet(tmp);
+  if (body.indexOf("\"port\"") >= 0) {
+    long v = jInt(body, "port", (long)MQTT_PORT_DFLT);
+    if (v < 1 || v > 65535) v = MQTT_PORT_DFLT;
+    mqttCfgPortSet((uint16_t)v);
+  }
+  if (jStr(body, "user", tmp, sizeof(tmp)))  mqttCfgUserSet(tmp);
+  if (jStr(body, "pass", tmp, sizeof(tmp)))  mqttCfgPassSet(tmp);
+  if (jStr(body, "token", tmp, sizeof(tmp))) mqttCfgTokenSet(tmp);
+  if (jStr(body, "base", tmp, sizeof(tmp)))  mqttCfgBaseSet(tmp);
+
+  sendJson("{\"ok\":1}");
+}
+
 static void handleVersion(void) {
   char b[160];
   snprintf(b, sizeof(b), "{\"ok\":1,\"fw\":\"%s\",\"build\":\"%s\",\"ap\":\"%s\"}",
@@ -606,6 +602,8 @@ void webBegin(void) {
   s_http.on("/api/appass", HTTP_POST, handleApPassSet);
   s_http.on("/api/cycle", HTTP_GET, handleCycleGet);
   s_http.on("/api/cycle", HTTP_POST, handleCycleSet);
+  s_http.on("/api/mqtt", HTTP_GET, handleMqttGet);
+  s_http.on("/api/mqtt", HTTP_POST, handleMqttSet);
   s_http.on("/api/version", HTTP_GET, handleVersion);
   s_http.on("/api/reboot", HTTP_POST, handleReboot);
   s_http.onNotFound(handleNotFound);

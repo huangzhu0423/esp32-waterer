@@ -80,6 +80,7 @@ enum LogCode : uint8_t {
   LOG_TASK_SKIP,
   LOG_LOCKOUT,
   LOG_CFG_BAD,
+  LOG_MQTT,
   LOG_COUNT
 };
 
