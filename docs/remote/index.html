@@ -211,6 +211,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
     </div>
     <div class="panel">
       <h3>设备</h3>
+      <div class="row"><span class="grow">设备在线</span><b id="dAvail">—</b></div>
       <div class="row"><span class="grow">固件</span><b id="dFw">—</b></div>
       <div class="row"><span class="grow">模式</span><b id="dMode">—</b></div>
       <div class="row"><span class="grow">IP</span><b id="dIp">—</b></div>
@@ -253,7 +254,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
 "use strict";
 var N=6, RING_C=2*Math.PI*26;
 var CH=[], TASKS=[], client=null, connected=false;
-var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false;
+var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null;
 var CFG_KEY='mqtt_dash_v2', TAB_KEY='mqtt_dash_tab';
 var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'',pass:'',token:'',sec:15};
 var cfg=DEF;
@@ -420,8 +421,9 @@ function resetTaskForm(){
 }
 function toggleTaskRows(){ var daily=$('#tType').value==='1'; $('#rInterval').hidden=daily; $('#rDaily').hidden=!daily; }
 function chOptions(){
-  var s=$('#tCh'); s.innerHTML='';
+  var s=$('#tCh'), cur=s.value; s.innerHTML='';
   for(var i=0;i<N;i++){ var o=el('option',null,chName(i)); o.value=i; s.appendChild(o); }
+  if(cur) s.value=cur;
 }
 
 /* ---------- 日志 ---------- */
@@ -451,7 +453,8 @@ function onWater(i){
 
 /* ---------- 状态解析 ---------- */
 function applyState(s){
-  gotState=true;
+  gotState=true; clearTimeout(onlineTimer);
+  $('#dAvail').textContent='在线';
   $('#devPanel') && ($('#devPanel').hidden=false);
   for(var i=0;i<N&&s.ch&&i<s.ch.length;i++){
     var d=s.ch[i], c=CH[i];
@@ -503,6 +506,14 @@ function connect(){
   var opt={clientId:u||('dash_'+Math.random().toString(16).slice(2,10)),clean:true,reconnectPeriod:4000,connectTimeout:15000};
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
+  gotState=false; clearTimeout(onlineTimer);
+  onlineTimer=setTimeout(function(){
+    if(!gotState){
+      $('#stripTxt').textContent='设备未上线 · 检查路由器与远程 MQTT';
+      $('#subline').textContent='6 路 · 设备未上线';
+      $('#dAvail').textContent='离线';
+    }
+  },6000);
   client=mqtt.connect(cfg.broker,opt);
   client.on('connect',function(){
     setConn(true);
@@ -515,6 +526,12 @@ function connect(){
   client.on('offline',function(){ setConn(false,'离线'); });
   client.on('error',function(e){ $('#banner').classList.add('on'); $('#banner').textContent='连接错误：'+(e&&e.message?e.message:e); });
   client.on('message',function(topic,payload){
+    if(topic===mqTopic('avail')){
+      var v=payload.toString();
+      $('#dAvail').textContent=(v==='online')?'在线':'离线';
+      if(v!=='online') $('#stripTxt').textContent='设备未上线 · 检查设备是否连上路由器';
+      return;
+    }
     try{
       var s=JSON.parse(payload.toString());
       if(s.k==='t'){ TASKS=s.tasks||[]; renderTasks(); }
