@@ -1,0 +1,42 @@
+[
+ {
+  "name": "esp-x32",
+  "file": "xtensa-esp-elf-14.2.0_20260121-i686-w64-mingw32.zip",
+  "url": "https://github.com/espressif/crosstool-NG/releases/download/esp-14.2.0_20260121/xtensa-esp-elf-14.2.0_20260121-i686-w64-mingw32.zip",
+  "sha": "SHA-256:d57eeb3783bce663cca312323ac9b305a22dfab479c642320c62aeefcc536ac0",
+  "ver": "2601",
+  "size": 411000830
+ },
+ {
+  "name": "xtensa-esp-elf-gdb",
+  "file": "xtensa-esp-elf-gdb-17.1_20260402-i686-w64-mingw32.zip",
+  "url": "https://github.com/espressif/binutils-gdb/releases/download/esp-gdb-v17.1_20260402/xtensa-esp-elf-gdb-17.1_20260402-i686-w64-mingw32.zip",
+  "sha": "SHA-256:8125a724e4f25c22b19a0321bce8b6a8675e12e0d12e5757d2ed75bd7262c53c",
+  "ver": "17.1_20260402",
+  "size": 43646185
+ },
+ {
+  "name": "esptool_py",
+  "file": "esptool-v5.3.1-windows-amd64.zip",
+  "url": "https://github.com/espressif/esptool/releases/download/v5.3.1/esptool-v5.3.1-windows-amd64.zip",
+  "sha": "SHA-256:2b4a73c45db27426685896f64ce3e557f63a64f43cc100cb65c0cc3486af96d3",
+  "ver": "5.3.1",
+  "size": 63962426
+ },
+ {
+  "name": "mklittlefs",
+  "file": "i686-w64-mingw32-mklittlefs-db0513a.zip",
+  "url": "https://github.com/earlephilhower/mklittlefs/releases/download/4.0.2/i686-w64-mingw32-mklittlefs-db0513a.zip",
+  "sha": "SHA-256:47d7d9b70397ee8dd0b858d3cc0f01db4d8a03a031652f788d81700c74f107cd",
+  "ver": "4.0.2-db0513a",
+  "size": 489405
+ },
+ {
+  "name": "esp32-libs",
+  "file": "esp32-libs-3.3.12.zip",
+  "url": "https://github.com/espressif/arduino-esp32/releases/download/3.3.12/esp32-libs-3.3.12.zip",
+  "sha": "SHA-256:4efd0f654c860b018e0ca2f858042ea6a78d8c2d57eef790b0d480d63bb56edc",
+  "ver": "3.3.12",
+  "size": 48020175
+ }
+]

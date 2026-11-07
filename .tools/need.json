@@ -1,0 +1,10 @@
+[
+ {
+  "name": "esp32-arduino-libs",
+  "file": "esp32-arduino-libs-idf-release_v5.1-632e0c2a.zip",
+  "url": "https://github.com/espressif/esp32-arduino-lib-builder/releases/download/idf-release_v5.1/esp32-arduino-libs-idf-release_v5.1-632e0c2a.zip",
+  "sha": "SHA-256:41f67e1c11f68b57d651955c93b63d6a8d35808ce6aff6ba3d1e1476178758f2",
+  "ver": "idf-release_v5.1-632e0c2a",
+  "size": 309895581
+ }
+]

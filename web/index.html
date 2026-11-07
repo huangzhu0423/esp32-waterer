@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f6fa">
+<title>自动浇水</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:#f4f6fa;color:#16202e;font:15px/1.45 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding-bottom:28px}
+.wrap{max-width:520px;margin:0 auto;padding:16px 14px 0}
+
+/* 顶部 */
+.hd{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hd h1{font-size:19px;font-weight:650;letter-spacing:.3px;margin:0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:5px 10px;border-radius:99px;background:#e8f0ff;color:#2563eb;font-weight:600;white-space:nowrap}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.off{background:#ffeced;color:#e5484d}
+.pill.mock{background:#f2f5fa;color:#7b8899}
+.sub{font-size:12px;color:#7b8899;margin:3px 0 14px}
+
+.banner{display:none;background:#ffeced;color:#c22c30;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:10px;margin-bottom:12px}
+.banner.on{display:block}
+
+/* 分段 */
+.tabs{display:flex;gap:4px;background:#e9eef6;border-radius:11px;padding:4px;margin-bottom:14px}
+.tabs button{flex:1;border:0;background:transparent;font:inherit;font-size:13px;font-weight:600;color:#5b6b80;padding:8px 0;border-radius:8px;cursor:pointer;transition:.16s}
+.tabs button.on{background:#fff;color:#16202e;box-shadow:0 1px 3px rgba(20,40,80,.1)}
+
+/* 状态条 */
+.strip{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #e6ebf2;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:12.5px;color:#5b6b80}
+.strip .beacon{width:8px;height:8px;border-radius:50%;background:#c6d0dd;flex:none}
+.strip.on .beacon{background:#2563eb;box-shadow:0 0 0 4px #e8f0ff}
+.strip b{color:#16202e;font-weight:600}
+.strip .grow{flex:1}
+.strip em{font-style:normal;color:#0F6E56;font-weight:600}
+
+/* 通道网格 */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:14px 11px 11px;display:flex;flex-direction:column;align-items:center;gap:7px;position:relative;transition:border-color .2s,box-shadow .2s}
+.card.run{border-color:#bfd4ff;box-shadow:0 0 0 3px #eef4ff}
+.card.fault{opacity:.6}
+.ring{position:relative;width:78px;height:78px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg);display:block}
+.ring .trk{fill:none;stroke:#eef2f8;stroke-width:7}
+.ring .val{fill:none;stroke:#2563eb;stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .5s,stroke .3s}
+.ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:650;letter-spacing:-.2px}
+.ring .num i{font-size:10px;font-style:normal;font-weight:500;color:#9aa7b6;margin-left:1px}
+.nm{font-size:13px;font-weight:600;display:flex;align-items:center;gap:5px}
+.dt{font-size:11px;color:#9aa7b6;margin-top:-4px;font-variant-numeric:tabular-nums}
+.gear{position:absolute;top:5px;right:5px;width:28px;height:28px;border:0;border-radius:8px;background:transparent;color:#b3bec9;font-size:15px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.gear:hover{background:#f2f5fa;color:#5b6b80}
+.wbtn{width:100%;height:38px;border:0;border-radius:10px;background:#2563eb;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .18s,transform .1s}
+.wbtn:active{transform:scale(.97)}
+.wbtn.run{background:#e5484d}
+.wbtn.wait{background:#f0f4fa;color:#8d9aab}
+.wbtn.fault{background:#f0f4fa;color:#b3bec9;cursor:not-allowed}
+
+/* 面板 */
+.panel{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:4px 14px;margin-bottom:12px}
+.row{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #f1f4f9;font-size:13.5px}
+.row:last-child{border-bottom:0}
+.row .grow{flex:1;min-width:0}
+.row .lb{color:#5b6b80;font-size:11.5px;margin-top:2px}
+.panel h3{font-size:12px;font-weight:600;color:#9aa7b6;letter-spacing:.6px;margin:14px 0 0;padding-bottom:6px}
+.hint{font-size:12px;color:#0F6E56;line-height:1.6;padding:10px 0 4px}
+
+.sw{position:relative;width:44px;height:26px;flex:none;display:block}
+.sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:2}
+.sw i{position:absolute;inset:0;background:#dde4ee;border-radius:99px;transition:background .2s}
+.sw i:after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.sw input:checked+i{background:#2563eb}
+.sw input:checked+i:after{transform:translateX(18px)}
+
+input[type=text],input[type=password],input[type=number],select{font:inherit;font-size:13.5px;color:#16202e;background:#f7f9fc;border:1px solid #e6ebf2;border-radius:9px;padding:9px 11px;width:100%;outline:none;transition:.16s}
+input:focus,select:focus{border-color:#bfd4ff;background:#fff;box-shadow:0 0 0 3px #eef4ff}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;margin:0}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:99px;background:#e9eef6}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-6.5px;border-radius:50%;background:#2563eb;box-shadow:0 1px 4px rgba(37,99,235,.4);cursor:pointer}
+
+.btn{border:0;border-radius:9px;font:inherit;font-size:13px;font-weight:600;padding:10px 16px;background:#2563eb;color:#fff;cursor:pointer;transition:.16s;white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:#f0f4fa;color:#5b6b80}
+.btn.sm{padding:7px 12px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* 日志 */
+.log{font-size:12.5px;padding:9px 0;border-bottom:1px solid #f1f4f9;display:flex;gap:9px;align-items:flex-start}
+.log:last-child{border-bottom:0}
+.log .t{color:#b3bec9;font-variant-numeric:tabular-nums;flex:none}
+.log .d{width:6px;height:6px;border-radius:50%;background:#2563eb;margin-top:6px;flex:none}
+.log .d.warn{background:#e0a300}
+.log .d.err{background:#e5484d}
+.log .d.ok{background:#0d9488}
+
+/* 底部弹层 */
+.mask{position:fixed;inset:0;background:rgba(16,26,40,.4);opacity:0;pointer-events:none;transition:opacity .22s;z-index:19}
+.mask.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;max-width:520px;margin:0 auto;background:#fff;border-radius:20px 20px 0 0;padding:8px 16px calc(20px + env(safe-area-inset-bottom));transform:translateY(104%);transition:transform .28s cubic-bezier(.3,.9,.4,1);z-index:20;max-height:88vh;overflow:auto}
+.sheet.on{transform:none}
+.sheet .grab{width:36px;height:4px;border-radius:99px;background:#e2e8f1;margin:6px auto 14px}
+.sheet h2{font-size:16px;font-weight:650;margin:0 0 2px;display:flex;align-items:center;gap:8px}
+.sheet .s-sub{font-size:12px;color:#9aa7b6;margin-bottom:16px}
+.frow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;font-size:13.5px;border-bottom:1px solid #f1f4f9}
+.frow:last-child{border-bottom:0}
+.frow b{font-weight:600;font-variant-numeric:tabular-nums}
+.slider-block{padding:6px 0 14px;border-bottom:1px solid #f1f4f9}
+.slider-block .lb{display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;margin-bottom:8px}
+.slider-block .lb span{color:#5b6b80}
+.slider-block .lb b{font-size:15px}
+
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translate(-50%,16px);background:rgba(22,32,46,.94);color:#fff;font-size:13px;padding:10px 18px;border-radius:99px;opacity:0;transition:.24s;pointer-events:none;z-index:40;max-width:86vw;text-align:center;line-height:1.4}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <h1>自动浇水</h1>
+    <span class="pill" id="mode"><span class="dot"></span><span id="modeT">连接中</span></span>
+  </div>
+  <div class="sub" id="subline">6 路 · 互斥供水</div>
+
+  <div class="banner" id="banner">连接中断，正在重试…</div>
+
+  <div class="tabs">
+    <button class="on" data-tab="ch">通道</button>
+    <button data-tab="time">定时</button>
+    <button data-tab="log">日志</button>
+    <button data-tab="set">设置</button>
+  </div>
+
+  <!-- 通道 -->
+  <div id="p-ch">
+    <div class="strip" id="strip">
+      <span class="beacon"></span>
+      <span class="grow" id="stripTxt">空闲</span>
+      <span id="stripExtra"></span>
+    </div>
+    <div class="panel">
+      <h3>一键采样标定</h3>
+      <div class="hint" style="padding:6px 0 9px">探头插好后按一下，6 路一次记录。</div>
+      <div style="display:flex;gap:8px;padding:0 0 11px">
+        <button class="btn ghost sm" id="calDry" style="flex:1">记录为干土</button>
+        <button class="btn ghost sm" id="calWet" style="flex:1">记录为已浇透</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"></div>
+  </div>
+
+  <!-- 定时 -->
+  <div id="p-time" hidden>
+    <div class="panel" id="taskList"></div>
+    <div class="panel">
+      <h3>新增定时</h3>
+      <div class="row"><span class="grow">通道</span><select id="tCh" style="width:110px"></select></div>
+      <div class="row"><span class="grow">类型</span><select id="tType" style="width:110px"><option value="interval">周期</option><option value="daily">每日时刻</option></select></div>
+      <div class="row" id="rInterval"><span class="grow">间隔（小时）</span><input type="number" id="tPeriod" value="6" min="1" max="72" style="width:110px"></div>
+      <div class="row" id="rDaily" hidden><span class="grow">时间</span><input type="text" id="tAt" value="08:00" style="width:110px;text-align:center"></div>
+      <div class="row"><span class="grow">浇水量（秒）</span><input type="number" id="tDur" value="15" min="1" max="300" style="width:110px"></div>
+      <div style="padding:12px 0"><button class="btn" id="tAdd" style="width:100%">添加</button></div>
+    </div>
+    <div class="hint" id="timeHint">周期型不依赖网络时间，掉电重来也能算。每日时刻型需要先同步时间。</div>
+  </div>
+
+  <!-- 日志 -->
+  <div id="p-log" hidden>
+    <div class="panel" id="logList"></div>
+  </div>
+
+  <!-- 设置 -->
+  <div id="p-set" hidden>
+    <div class="panel">
+      <h3>连接路由器</h3>
+      <div style="padding:10px 0 4px"><input type="text" id="wSsid" placeholder="WiFi 名称（2.4G）"></div>
+      <div style="padding:6px 0"><input type="password" id="wPass" placeholder="密码"></div>
+      <div style="display:flex;gap:8px;padding:10px 0">
+        <button class="btn ghost sm" id="wScan">扫描</button>
+        <button class="btn sm" id="wSave" style="flex:1">保存并重启</button>
+      </div>
+      <div id="wList" style="padding:0 0 8px"></div>
+    </div>
+    <div class="panel">
+      <h3>热点密码</h3>
+      <div style="padding:10px 0 4px"><input type="text" id="apPass" placeholder="8~63 位英文数字" autocomplete="off" spellcheck="false"></div>
+      <div style="padding:10px 0"><button class="btn sm" id="apSave" style="width:100%">保存</button></div>
+      <div class="hint">改完马上生效，所有已连设备会断开，需要用新密码重连。</div>
+    </div>
+    <div class="panel">
+      <h3>设备</h3>
+      <div class="row"><span class="grow">工作模式</span><b id="dMode">—</b></div>
+      <div class="row"><span class="grow">IP 地址</span><b id="dIp">—</b></div>
+      <div class="row"><span class="grow">信号强度</span><b id="dRssi">—</b></div>
+      <div class="row"><span class="grow">可用内存</span><b id="dHeap">—</b></div>
+      <div class="row"><span class="grow">运行时长</span><b id="dUp">—</b></div>
+      <div class="row"><span class="grow">固件版本</span><b id="dVer">—</b></div>
+    </div>
+    <div class="hint">连不上路由器时板子会自动开热点，手机连 <b>AutoWater</b> 开头的 WiFi 就能打开本页。热点模式下没有外网，属于正常。</div>
+  </div>
+</div>
+
+<div class="mask" id="mask"></div>
+<div class="sheet" id="sheet"><div class="grab"></div><div id="sheetBody"></div></div>
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------- 常量 ---------- */
+var N = 6;
+var RING_C = 2 * Math.PI * 26;   /* r=26 */
+var POLL_OK = 2000, POLL_HIDDEN = 10000;
+
+/* ---------- 状态 ---------- */
+var CH = [];          /* 通道 */
+var tasks = [];       /* 定时任务 */
+var logs = [];        /* 日志 */
+var active = null;    /* {ch, src, remain} */
+var queue = [];       /* 等待队列 */
+var live = false;     /* true = 连的真板子 */
+var failCount = 0;
+var now = 0;          /* 逻辑时钟（秒），mock 用 */
+var sheetCh = -1;
+
+/* ---------- 工具 ---------- */
+function $(s){ return document.querySelector(s); }
+function el(tag, cls, txt){ var e=document.createElement(tag); if(cls) e.className=cls; if(txt!=null) e.textContent=txt; return e; }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function pad2(n){ return n<10?'0'+n:''+n; }
+function hhmmss(sec){ var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60;
+  return h>0 ? (h+':'+pad2(m)+':'+pad2(s)) : (pad2(m)+':'+pad2(s)); }
+function clockNow(){ var d=new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
+function toast(msg){ var t=$('#toast'); t.textContent=msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t=setTimeout(function(){ t.classList.remove('on'); },2000); }
+
+/* 湿度换算：干点 raw 高、湿点 raw 低 */
+function toPct(c){
+  if(c.fault) return 0;
+  var span = c.dryRaw - c.wetRaw;
+  if(span < 100) span = 100;
+  return clamp(Math.round((c.dryRaw - c.raw) / span * 100), 0, 100);
+}
+
+/* ---------- 初始化通道 ---------- */
+var SEED = [
+  {raw:2410, auto:true,  thr:30},
+  {raw:2980, auto:true,  thr:30},
+  {raw:1980, auto:true,  thr:35},
+  {raw:2600, auto:true,  thr:30},
+  {raw:3400, auto:false, thr:25},
+  {raw:55,   auto:false, thr:30, fault:1}
+];
+function initChannels(){
+  CH = [];
+  for(var i=0;i<N;i++){
+    var s = SEED[i] || {raw:2600, auto:true, thr:30};
+    var c = {
+      i:i, raw:s.raw, pct:0, auto:!!s.auto, thr:s.thr||30,
+      maxSec:15, minGapSec:30,
+      dryRaw:2800, wetRaw:1150,
+      fault:s.fault||0, todaySec:0, lastRun:0
+    };
+    c.pct = toPct(c);
+    CH.push(c);
+  }
+}
+
+/* ---------- 通道卡片 ---------- */
+function buildGrid(){
+  var g = $('#grid');
+  g.innerHTML = '';
+  for(var i=0;i<N;i++){
+    var card = el('div','card'); card.dataset.i = i;
+    var ring = el('div','ring');
+    ring.innerHTML = '<svg viewBox="0 0 64 64"><circle class="trk" cx="32" cy="32" r="26"></circle>'+
+      '<circle class="val" cx="32" cy="32" r="26" stroke-dasharray="'+RING_C.toFixed(1)+'" stroke-dashoffset="'+RING_C.toFixed(1)+'"></circle></svg>'+
+      '<div class="num"><span class="p">0</span><i>%</i></div>';
+    var gear = el('button','gear','\u22ef'); gear.dataset.act='gear'; gear.dataset.i=i;
+    var nm = el('div','nm'); nm.innerHTML = '<span>通道 '+(i+1)+'</span>';
+    var chip = el('span','chip auto','自动'); chip.dataset.role = 'chip';
+    nm.appendChild(chip);
+    var dt = el('div','dt','raw 0');
+    var btn = el('button','wbtn','浇水'); btn.dataset.act='water'; btn.dataset.i=i;
+    card.appendChild(gear); card.appendChild(ring); card.appendChild(nm); card.appendChild(dt); card.appendChild(btn);
+    g.appendChild(card);
+  }
+}
+
+function updateCard(i){
+  var c = CH[i];
+  var card = $('#grid').children[i];
+  if(!card) return;
+  var val = card.querySelector('.val');
+  var pct = toPct(c);
+  var off = RING_C * (1 - pct/100);
+  val.style.strokeDashoffset = off.toFixed(1);
+  val.style.stroke = c.fault ? '#d7dfe9' : (pct < c.thr ? '#e0a300' : '#2563eb');
+  card.querySelector('.num .p').textContent = c.fault ? '--' : pct;
+  card.querySelector('.dt').textContent = c.fault ? 'raw '+c.raw+' · 断线' : 'raw '+c.raw;
+
+  var chip = card.querySelector('.chip');
+  var run = active && active.ch === i;
+  var queued = queue.some(function(q){ return q.ch === i; });
+  if(c.fault){ chip.className='chip err'; chip.textContent='故障'; }
+  else if(run){ chip.className='chip auto'; chip.textContent = (active.src==='manual'?'手动':'自动'); }
+  else if(queued){ chip.className='chip q'; chip.textContent='排队'; }
+  else if(c.auto){ chip.className='chip auto'; chip.textContent='自动'; }
+  else { chip.className='chip off'; chip.textContent='关闭'; }
+
+  var btn = card.querySelector('.wbtn');
+  if(c.fault && !run){ btn.className='wbtn fault'; btn.textContent='传感器故障'; }
+  else if(run){ btn.className='wbtn run'; btn.textContent='停止 '+active.remain+'s'; }
+  else if(queued){ btn.className='wbtn wait'; btn.textContent='排队中'; }
+  else { btn.className='wbtn'; btn.textContent='浇 '+c.maxSec+'s'; }
+
+  card.className = 'card' + (run?' run':'') + (c.fault?' fault':'');
+}
+
+function updateStrip(){
+  var s = $('#strip'), t = $('#stripTxt'), e = $('#stripExtra');
+  if(active){
+    s.classList.add('on');
+    t.innerHTML = '通道 <b>'+(active.ch+1)+'</b> '+(active.src==='manual'?'手动':'自动')+'浇水中 · 剩余 <b>'+active.remain+'s</b>';
+  } else if(queue.length){
+    s.classList.remove('on');
+    t.textContent = '排队中 '+queue.length+' 项';
+  } else {
+    s.classList.remove('on');
+    t.textContent = '空闲 · 无浇水任务';
+  }
+  var dry = 0, flt = 0;
+  for(var i=0;i<N;i++){ if(CH[i].fault) flt++; else if(toPct(CH[i]) < CH[i].thr) dry++; }
+  e.innerHTML = (dry?dry+' 路偏干':'湿度正常') + (flt?' · '+flt+' 路故障':'');
+  $('#subline').textContent = N+' 路 · 互斥供水 · 同一时刻仅一路运行';
+}
+
+function renderChannels(){
+  for(var i=0;i<N;i++) updateCard(i);
+  updateStrip();
+}
+
+/* ---------- 日志 ---------- */
+function addLog(txt, kind, ch){
+  logs.unshift({ t: clockNow(), txt: txt, kind: kind||'', ch: (ch==null?-1:ch) });
+  if(logs.length > 200) logs.pop();
+  renderLogs();
+}
+function renderLogs(){
+  if($('#p-log').hidden) return;
+  var box = $('#logList');
+  box.innerHTML = '';
+  if(!logs.length){ box.appendChild(el('div','log','暂无记录')); return; }
+  var frag = document.createDocumentFragment();
+  for(var i=0;i<Math.min(logs.length,80);i++){
+    var L = logs[i];
+    var r = el('div','log');
+    r.appendChild(el('span','t',L.t));
+    r.appendChild(el('span','d '+L.kind));
+    r.appendChild(el('span','',L.txt));
+    frag.appendChild(r);
+  }
+  box.appendChild(frag);
+}
+
+/* ---------- 定时任务 ---------- */
+function renderTasks(){
+  var box = $('#taskList');
+  box.innerHTML = '';
+  box.appendChild(el('h3','',null));
+  box.querySelector('h3').textContent = '任务列表';
+  if(!tasks.length){
+    var e = el('div','row'); e.appendChild(el('span','grow','还没有定时任务')); box.appendChild(e);
+  }
+  tasks.forEach(function(t, idx){
+    var row = el('div','row');
+    var g = el('div','grow');
+    var m = el('div','', '通道 '+(t.ch+1)+' · '+(t.type==='interval'? ('每 '+t.periodMin/60+' 小时') : (pad2(t.hour)+':'+pad2(t.min)+' 每日')));
+    var lb = el('div','lb','每次 '+t.durSec+' 秒' + (t.type==='daily' && !live ? ' · 需同步时间' : ''));
+    g.appendChild(m); g.appendChild(lb);
+    var sw = el('label','sw');
+    var cb = el('input'); cb.type='checkbox'; cb.checked = !!t.on; cb.dataset.act='task'; cb.dataset.i = idx;
+    sw.appendChild(cb); sw.appendChild(el('i'));
+    row.appendChild(g); row.appendChild(sw); box.appendChild(row);
+  });
+  var chSel = $('#tCh');
+  if(!chSel.options.length){
+    for(var i=0;i<N;i++){ var o=el('option',null,'通道 '+(i+1)); o.value=i; chSel.appendChild(o); }
+  }
+}
+
+/* ---------- 底部设置弹层 ---------- */
+function openSheet(i){
+  sheetCh = i;
+  var c = CH[i];
+  var b = $('#sheetBody');
+  b.innerHTML = '';
+  var h = el('h2'); h.innerHTML = '通道 '+(i+1)+' <span class="chip '+(c.auto?'auto':'off')+'">'+(c.auto?'自动':'手动')+'</span>';
+  b.appendChild(h);
+  b.appendChild(el('div','s-sub','实时湿度和校准都在这里调'));
+
+  var rows = [];
+
+  rows.push('<div class="frow"><span>自动浇水</span><label class="sw"><input type="checkbox" id="sAuto"'+(c.auto?' checked':'')+'><i></i></label></div>');
+
+  rows.push('<div class="slider-block"><div class="lb"><span>目标湿度阈值</span><b id="sThrV">'+c.thr+'%</b></div>'+
+    '<input type="range" id="sThr" min="5" max="90" step="1" value="'+c.thr+'"></div>');
+
+  rows.push('<div class="frow"><span>当前湿度</span><b id="sPct">'+(c.fault?'故障':toPct(c)+'%')+'</b></div>');
+  rows.push('<div class="frow"><span>原始读数</span><b id="sRaw">'+c.raw+'</b></div>');
+  rows.push('<div class="frow"><span>单次浇水时长</span><b>'+c.maxSec+' 秒</b></div>');
+  rows.push('<div class="slider-block"><div class="lb"><span>单次时长</span><b id="sSecV">'+c.maxSec+'s</b></div>'+
+    '<input type="range" id="sSec" min="5" max="120" step="5" value="'+c.maxSec+'"></div>');
+  rows.push('<div class="frow"><span>最小间隔</span><b>'+c.minGapSec+' 分钟</b></div>');
+
+  rows.push('<div class="frow"><span>干点 raw</span><b id="sDry">'+c.dryRaw+'</b></div>');
+  rows.push('<div class="frow"><span>湿点 raw</span><b id="sWet">'+c.wetRaw+'</b></div>');
+  rows.push('<div style="display:flex;gap:8px;padding:12px 0 4px">'+
+    '<button class="btn ghost sm" id="sCalDry" style="flex:1">以当前值为干点</button>'+
+    '<button class="btn ghost sm" id="sCalWet" style="flex:1">以当前值为湿点</button></div>');
+  rows.push('<div style="padding:10px 0 0"><button class="btn" id="sWater" style="width:100%">立即浇 '+c.maxSec+' 秒</button></div>');
+  rows.push('<div class="hint">干点 = 干土时读到的值（数值大），湿点 = 泡在水里读到的值（数值小）。装好后各按一次就标定完成。</div>');
+
+  b.insertAdjacentHTML('beforeend', rows.join(''));
+
+  $('#sAuto').addEventListener('change', function(){
+    CH[i].auto = this.checked;
+    if(live) api('/api/channel', {ch:i, auto:CH[i].auto?1:0});
+    addLog('通道 '+(i+1)+' 自动浇水 '+(CH[i].auto?'开启':'关闭'), '', i);
+    renderChannels(); openSheet(i);
+  });
+  $('#sThr').addEventListener('input', function(){ $('#sThrV').textContent = this.value+'%'; CH[i].thr = +this.value; renderChannels(); });
+  $('#sThr').addEventListener('change', function(){ if(live) api('/api/channel', {ch:i, thr:+this.value}); });
+  $('#sSec').addEventListener('input', function(){ $('#sSecV').textContent = this.value+'s'; CH[i].maxSec = +this.value; renderChannels(); });
+  $('#sSec').addEventListener('change', function(){ if(live) api('/api/channel', {ch:i, maxSec:+this.value}); });
+  $('#sCalDry').addEventListener('click', function(){ calibrate(i,'dry'); });
+  $('#sCalWet').addEventListener('click', function(){ calibrate(i,'wet'); });
+  $('#sWater').addEventListener('click', function(){ requestWater(i, CH[i].maxSec, 'manual'); closeSheet(); });
+
+  $('#mask').classList.add('on');
+  $('#sheet').classList.add('on');
+}
+function closeSheet(){
+  sheetCh = -1;
+  $('#mask').classList.remove('on');
+  $('#sheet').classList.remove('on');
+}
+function calibrate(i, point){
+  var c = CH[i];
+  if(point === 'dry'){ c.dryRaw = c.raw; addLog('通道 '+(i+1)+' 干点校准为 '+c.raw, 'ok', i); }
+  else { c.wetRaw = c.raw; addLog('通道 '+(i+1)+' 湿点校准为 '+c.raw, 'ok', i); }
+  if(live) api('/api/calibrate', {ch:i, point:point});
+  c.pct = toPct(c);
+  renderChannels(); openSheet(i);
+  toast(point==='dry' ? '干点已记录' : '湿点已记录');
+}
+
+/* ---------- 一键采样标定（6 路一起） ---------- */
+function calibAll(point){
+  var bD = $('#calDry'), bW = $('#calWet');
+  var self = (point === 'dry') ? bD : bW;
+  var old = self.textContent;
+  var name = (point === 'dry') ? '干土' : '已浇透';
+  bD.disabled = true; bW.disabled = true;
+  self.textContent = '采样中…';
+
+  function finish(msg){
+    self.textContent = old;
+    bD.disabled = false; bW.disabled = false;
+    if(msg) toast(msg);
+  }
+
+  if(!live){
+    var okc = 0, bad = 0;
+    for(var i=0;i<N;i++){
+      var c = CH[i];
+      if(c.fault){ bad++; addLog('通道 '+(i+1)+' 跳过标定 · 探头未接好', 'warn', i); continue; }
+      if(point === 'dry'){
+        if(c.raw - c.wetRaw < 150){ bad++; addLog('通道 '+(i+1)+' 跳过标定 · 比湿点还低', 'warn', i); continue; }
+        c.dryRaw = c.raw;
+      } else {
+        if(c.dryRaw - c.raw < 150){ bad++; addLog('通道 '+(i+1)+' 跳过标定 · 比干点还高', 'warn', i); continue; }
+        c.wetRaw = c.raw;
+      }
+      c.pct = toPct(c); okc++;
+    }
+    addLog('一键标定：'+okc+' 路记录为'+name, 'ok', -1);
+    renderChannels();
+    finish(okc ? okc+' 路已记录'+(bad?'，'+bad+' 路跳过':'') : '没有可标定的通道');
+    return;
+  }
+
+  api('/api/calib_all', {point:point}).then(function(r){
+    if(!r || !r.ok){
+      finish((r && r.err === 'busy') ? '正在浇水，等浇完再标' : '标定失败，设备无响应');
+      return;
+    }
+    var items = r.items || [], okc = r.applied || 0, skip = 0;
+    items.forEach(function(it){
+      var c = CH[it.i];
+      if(it.st){
+        skip++;
+        addLog('通道 '+(it.i+1)+' 跳过标定 · '+(it.st === 1 ? '探头未接入' : '读数饱和'), 'warn', it.i);
+        return;
+      }
+      if(point === 'dry') c.dryRaw = it.raw; else c.wetRaw = it.raw;
+      c.pct = toPct(c);
+    });
+    addLog('一键标定：'+okc+' 路记录为'+name, 'ok', -1);
+    renderChannels();
+    finish(okc ? okc+' 路已记录'+(skip?'，'+skip+' 路跳过':'') : '没有可标定的通道，检查探头');
+  });
+}
+
+/* ---------- 浇水调度 ---------- */
+function requestWater(i, sec, src){
+  var c = CH[i];
+  if(c.fault){ toast('通道 '+(i+1)+' 传感器故障，请先检查接线'); return; }
+  sec = sec || c.maxSec;
+
+  if(active){
+    if(src === 'manual'){
+      var victim = active.ch;
+      stopActive('被手动抢占');
+      startPump(i, sec, src);
+      addLog('通道 '+(i+1)+' 手动浇水，抢占通道 '+(victim+1), 'warn', i);
+      return;
+    }
+    if(!queue.some(function(q){ return q.ch===i; }) && queue.length < N){
+      queue.push({ch:i, sec:sec, src:src});
+      addLog('通道 '+(i+1)+' 进入排队', '', i);
+      renderChannels(); return;
+    }
+    return;
+  }
+  startPump(i, sec, src);
+}
+
+function startPump(i, sec, src){
+  active = { ch:i, src:src, remain:sec };
+  addLog('通道 '+(i+1)+' 开始浇水 '+sec+'s', src==='manual'?'':'ok', i);
+  renderChannels();
+  api('/api/pump', {ch:i, action:'start', sec:sec, src:src});
+}
+function stopActive(reason){
+  if(!active) return;
+  var i = active.ch;
+  CH[i].lastRun = now;
+  if(reason === '完成') addLog('通道 '+(i+1)+' 浇水完成 '+CH[i].maxSec+'s', 'ok', i);
+  else if(reason) addLog('通道 '+(i+1)+' 停止 · '+reason, 'warn', i);
+  active = null;
+  if(live) api('/api/pump', {ch:i, action:'stop'});
+}
+function pumpDone(){
+  var i = active.ch;
+  addLog('通道 '+(i+1)+' 浇水完成', 'ok', i);
+  active = null;
+  renderChannels();
+  if(queue.length){
+    var q = queue.shift();
+    startPump(q.ch, q.sec, q.src);
+  }
+}
+
+/* ---------- MOCK 引擎 ---------- */
+function mockTick(){
+  now++;
+  for(var i=0;i<N;i++){
+    var c = CH[i];
+    if(c.fault) continue;
+    if(active && active.ch === i){
+      c.raw = clamp(Math.round(c.raw - 55), 0, 4095);        /* 浇水，湿度快速上升 */
+    } else {
+      c.raw = clamp(Math.round(c.raw + 2.2), 0, 4095);       /* 自然蒸发 */
+    }
+    c.pct = toPct(c);
+  }
+  if(active){
+    active.remain--;
+    if(active.remain <= 0) pumpDone();
+  }
+  /* 自动触发：空闲且队列空时才进队 */
+  if(!active && !queue.length){
+    for(var k=0;k<N;k++){
+      var ch = CH[k];
+      if(ch.auto && !ch.fault && toPct(ch) < ch.thr && (now - ch.lastRun) > 20){
+        requestWater(k, ch.maxSec, 'auto');
+        break;
+      }
+    }
+  }
+  renderChannels();
+  if(sheetCh >= 0){
+    var sc = CH[sheetCh];
+    if($('#sPct')) $('#sPct').textContent = sc.fault ? '故障' : toPct(sc)+'%';
+    if($('#sRaw')) $('#sRaw').textContent = sc.raw;
+  }
+  $('#dUp').textContent = hhmmss(now);
+}
+
+/* ---------- API ---------- */
+function api(path, body){
+  if(!live) return Promise.resolve({ok:true});
+  var opt = body ? {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)} : {};
+  return fetch(path, opt).then(function(r){
+    return r.json().catch(function(){ return {ok:r.ok}; });
+  }).catch(function(){ return {ok:false}; });
+}
+
+function poll(){
+  if(!live) return;
+  var ctrl = new AbortController();
+  var to = setTimeout(function(){ ctrl.abort(); }, 4000);
+  fetch('/api/state', {signal: ctrl.signal}).then(function(r){ return r.json(); }).then(function(s){
+    clearTimeout(to);
+    failCount = 0;
+    $('#banner').classList.remove('on');
+    applyState(s);
+    pollLogs();
+  }).catch(function(){
+    clearTimeout(to);
+    failCount++;
+    if(failCount >= 3){ $('#banner').classList.add('on'); $('#modeT').textContent='连接中断'; $('#mode').classList.add('off'); }
+  });
+}
+
+function applyState(s){
+  if(!s || !s.ch) return;
+  for(var i=0;i<N && i<s.ch.length;i++){
+    var d = s.ch[i], c = CH[i];
+    c.raw = d.raw; c.pct = d.pct; c.fault = d.flt||0;
+    if(d.auto != null) c.auto = !!d.auto;
+    if(d.dry != null) c.dryRaw = d.dry;   /* 标定后由固件回传，前端不自己猜 */
+    if(d.wet != null) c.wetRaw = d.wet;
+  }
+  active = s.active ? {ch:s.active.ch, src:s.active.src, remain:s.active.remain} : null;
+  $('#dMode').textContent = s.mode === 'ap' ? '热点模式' : '路由器模式';
+  $('#dIp').textContent = s.ip || '—';
+  $('#dRssi').textContent = s.rssi ? s.rssi+' dBm' : '—';
+  $('#dHeap').textContent = s.heap ? Math.round(s.heap/1024)+' KB' : '—';
+  $('#dUp').textContent = hhmmss(s.up||0);
+  renderChannels();
+}
+
+/* ---------- 事件 ---------- */
+document.addEventListener('click', function(ev){
+  var t = ev.target.closest('[data-act]');
+  if(t){
+    var i = +t.dataset.i;
+    if(t.dataset.act === 'water'){
+      if(active && active.ch === i) stopActive('手动停止');
+      else if(queue.some(function(q){ return q.ch===i; })) toast('该通道正在排队');
+      else requestWater(i, CH[i].maxSec, 'manual');
+      return;
+    }
+    if(t.dataset.act === 'gear'){ openSheet(i); return; }
+    if(t.dataset.act === 'task'){
+      tasks[i].on = t.checked;
+      addLog('定时任务 '+(i+1)+' '+(t.checked?'启用':'停用'), '', tasks[i].ch);
+      if(live && tasks[i].si != null) api('/api/schedule', {i: tasks[i].si, on: tasks[i].on?1:0});
+      return;
+    }
+  }
+  if(ev.target.closest('.card') && !ev.target.closest('button')){
+    var card = ev.target.closest('.card');
+    openSheet(+card.dataset.i);
+  }
+});
+
+$('#mask').addEventListener('click', closeSheet);
+$('#calDry').addEventListener('click', function(){ calibAll('dry'); });
+$('#calWet').addEventListener('click', function(){ calibAll('wet'); });
+
+document.querySelectorAll('.tabs button').forEach(function(b){
+  b.addEventListener('click', function(){
+    document.querySelectorAll('.tabs button').forEach(function(x){ x.classList.remove('on'); });
+    b.classList.add('on');
+    ['ch','time','log','set'].forEach(function(k){
+      $('#p-'+k).hidden = (k !== b.dataset.tab);
+    });
+    if(b.dataset.tab === 'log') renderLogs();
+    if(b.dataset.tab === 'time') renderTasks();
+  });
+});
+
+$('#tType').addEventListener('change', function(){
+  var v = this.value;
+  $('#rInterval').hidden = (v !== 'interval');
+  $('#rDaily').hidden = (v !== 'daily');
+});
+
+$('#tAdd').addEventListener('click', function(){
+  var ch = +$('#tCh').value, type = $('#tType').value, dur = clamp(+$('#tDur').value||15,1,300);
+  var t = { on:true, ch:ch, type:type, durSec:dur };
+  if(type === 'interval'){ t.periodMin = clamp(+$('#tPeriod').value||6,1,72)*60; }
+  else {
+    var m = /^(\d{1,2})[:：](\d{1,2})$/.exec($('#tAt').value.trim());
+    if(!m){ toast('时间格式写成 08:00'); return; }
+    t.hour = clamp(+m[1],0,23); t.min = clamp(+m[2],0,59);
+  }
+  tasks.push(t);
+  addLog('新增定时任务：通道 '+(ch+1)+' '+(type==='interval' ? '每 '+(t.periodMin/60)+' 小时' : (pad2(t.hour)+':'+pad2(t.min)+' 每日'))+' · '+dur+'s', 'ok', ch);
+  if(live){
+    api('/api/schedule', t).then(function(r){ if(r && r.i != null) t.si = r.i; });
+  }
+  renderTasks();
+  toast('已添加');
+});
+
+/* 从固件拉取定时任务表 */
+function loadTasks(){
+  if(!live) return;
+  fetch('/api/schedule').then(function(r){ return r.json(); }).then(function(d){
+    if(!d || !d.tasks) return;
+    tasks = d.tasks.map(function(x){
+      return { si:x.i, on:!!x.on, ch:x.ch, type:(x.type===0?'interval':'daily'),
+               periodMin:x.periodMin, durSec:x.durSec, hour:x.hour, min:x.min };
+    });
+    renderTasks();
+  }).catch(function(){});
+}
+
+/* 增量拉日志 */
+var lastLogSeq = 0;
+function pollLogs(){
+  if(!live) return;
+  fetch('/api/logs?since='+lastLogSeq).then(function(r){ return r.json(); }).then(function(d){
+    if(!d || !d.items || !d.items.length) return;
+    d.items.forEach(function(it){
+      logs.unshift({ t: hhmmss(it.t), txt: (it.ch>=0 ? '通道'+(it.ch+1)+' ' : '') + it.c, kind: it.k||'' });
+      lastLogSeq = it.s;
+    });
+    if(logs.length > 200) logs.length = 200;
+    renderLogs();
+  }).catch(function(){});
+}
+
+$('#wScan').addEventListener('click', function(){
+  if(!live){ toast('预览模式不扫描'); return; }
+  toast('扫描中…');
+  fetch('/api/scan').then(function(r){ return r.json(); }).then(function(d){
+    var box = $('#wList');
+    box.innerHTML = '';
+    (d.nets||[]).forEach(function(n){
+      var b = el('button','btn ghost sm',''); 
+      b.style.cssText = 'width:100%;margin:4px 0;text-align:left';
+      b.textContent = n.ssid + '  ' + n.rssi + 'dBm';
+      b.addEventListener('click', function(){ $('#wSsid').value = n.ssid; });
+      box.appendChild(b);
+    });
+  }).catch(function(){ toast('扫描失败'); });
+});
+
+$('#wSave').addEventListener('click', function(){
+  var ssid = $('#wSsid').value.trim(), pass = $('#wPass').value;
+  if(!ssid){ toast('请填 WiFi 名称'); return; }
+  if(live) api('/api/wifi', {ssid:ssid, pass:pass});
+  addLog('WiFi 已保存：'+ssid+'，3 秒后重启', 'ok', -1);
+  toast('已保存，板子重启中…');
+});
+
+/* 热点密码：进页面读一次填进输入框，忘了密码也能在这看到 */
+function loadApPass(){
+  if(!live) return;
+  fetch('/api/appass').then(function(r){ return r.json(); }).then(function(d){
+    if(d && d.ok && $('#apPass')) $('#apPass').value = d.pass || '';
+  }).catch(function(){});
+}
+
+$('#apSave').addEventListener('click', function(){
+  var p = $('#apPass').value.trim();
+  if(p.length < 8 || p.length > 63){ toast('密码需要 8~63 位'); return; }
+  if(!live){ toast('预览模式下不可用'); return; }
+  api('/api/appass', {pass:p}).then(function(r){
+    if(r && r.ok){ toast('已保存，热点正在重启'); }
+    else { toast('保存失败，密码只能含英文数字'); }
+  });
+});
+
+/* ---------- 启动 ---------- */
+function boot(){
+  initChannels();
+  buildGrid();
+  renderChannels();
+  renderLogs();
+
+  /* 探测真实板子 */
+  var ctrl = new AbortController();
+  var to = setTimeout(function(){ ctrl.abort(); }, 1200);
+  fetch('/api/state', {signal: ctrl.signal}).then(function(r){ return r.json(); }).then(function(s){
+    clearTimeout(to);
+    live = true;
+    $('#mode').className = 'pill';
+    $('#modeT').textContent = (s.mode === 'ap' ? '热点' : '在线');
+    $('#dVer').textContent = s.fw || '—';
+    applyState(s);
+    window.__poll = setInterval(poll, POLL_OK);
+    addLog('已连接设备', 'ok', -1);
+    loadTasks();
+    loadApPass();
+    pollLogs();
+  }).catch(function(){
+    clearTimeout(to);
+    live = false;
+    $('#mode').className = 'pill mock';
+    $('#modeT').textContent = '预览模式';
+    $('#dMode').textContent = '模拟';
+    $('#dIp').textContent = '192.168.1.42';
+    $('#dRssi').textContent = '-58 dBm';
+    $('#dHeap').textContent = '236 KB';
+    $('#dVer').textContent = 'v1.0.0-preview';
+    addLog('预览模式，数据为模拟值', '', -1);
+    addLog('通道 6 传感器断线，已停用自动', 'err', 5);
+    addLog('通道 2 湿度低于阈值，自动浇水 15s', 'ok', 1);
+    setInterval(mockTick, 1000);
+  });
+}
+
+document.addEventListener('visibilitychange', function(){
+  if(!live) return;
+  clearInterval(window.__poll);
+  window.__poll = setInterval(poll, document.hidden ? POLL_HIDDEN : POLL_OK);
+});
+
+boot();
+})();
+</script>
+</body>
+</html>

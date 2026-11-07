@@ -1,0 +1,15 @@
+# 手工备份目录与 .bak 快照
+.backup/
+*.bak
+
+# WorkBuddy 工作区元数据（记忆、会话等），不属于项目源码
+.workbuddy/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 系统垃圾
+Thumbs.db
+.DS_Store
+desktop.ini
