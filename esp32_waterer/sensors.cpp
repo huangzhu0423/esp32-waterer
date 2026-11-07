@@ -42,6 +42,11 @@ static bool     s_bootDone = false;   /* 首轮是否已完成：没采过就立
 static bool     s_reqNow = false;     /* 有人点名要立刻补采一轮 */
 static bool     s_pwrFault = false;   /* 探头供电异常（六路同时贴地），全局状态 */
 
+/* 采样周期由网页设置、存 NVS，这里换算成毫秒 */
+static uint32_t cycleMs(void) {
+  return (uint32_t)storeSampleCycle() * 60000UL;
+}
+
 /* ============ 探头供电开关 ============ */
 static void sensorPowerOn(void) {
   /* 先定电平再切输出：pinMode 会立刻让引脚按输出寄存器当前值驱动，
@@ -304,7 +309,7 @@ void sensorsTick(uint32_t nowMs, bool pumpRecent) {
     case SP_IDLE:
       /* 首轮、到周期、或被点名补采，就开一轮 */
       if (!s_bootDone || s_reqNow ||
-          (uint32_t)(nowMs - s_lastCycleMs) >= SENSOR_CYCLE_MS) {
+          (uint32_t)(nowMs - s_lastCycleMs) >= cycleMs()) {
         sensorPowerOn();
         s_pwrAtMs = nowMs;
         s_readCh = 0;
@@ -370,8 +375,9 @@ bool sensorsSampling(void) {
 
 uint32_t sensorsNextCycleMs(uint32_t nowMs) {
   if (s_pwrState != SP_IDLE || !s_bootDone) return 0;
+  uint32_t cyc = cycleMs();
   uint32_t el = (uint32_t)(nowMs - s_lastCycleMs);
-  return (el >= SENSOR_CYCLE_MS) ? 0 : (SENSOR_CYCLE_MS - el);
+  return (el >= cyc) ? 0 : (cyc - el);
 }
 
 uint16_t sensorsRaw(uint8_t ch) {

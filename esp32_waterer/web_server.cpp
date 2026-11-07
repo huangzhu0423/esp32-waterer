@@ -554,6 +554,24 @@ static void handleApPassSet(void) {
   if (s_apRestartAt == 0) s_apRestartAt = 1;
 }
 
+/* ================= 采样周期 ================= */
+static void handleCycleGet(void) {
+  char b[80];
+  snprintf(b, sizeof(b), "{\"ok\":1,\"min\":%u,\"lo\":%d,\"hi\":%d}",
+           (unsigned)storeSampleCycle(), SAMPLE_CYCLE_MIN, SAMPLE_CYCLE_MAX);
+  sendJson(b);
+}
+
+static void handleCycleSet(void) {
+  String body = s_http.arg("plain");
+  long v = jInt(body, "min", -1);
+  if (v < SAMPLE_CYCLE_MIN || v > SAMPLE_CYCLE_MAX) { sendErr(REQ_ERR_INVALID); return; }
+  storeSampleCycleSet((uint16_t)v);
+  char b[48];
+  snprintf(b, sizeof(b), "{\"ok\":1,\"min\":%ld}", v);
+  sendJson(b);
+}
+
 static void handleVersion(void) {
   char b[160];
   snprintf(b, sizeof(b), "{\"ok\":1,\"fw\":\"%s\",\"build\":\"%s\",\"ap\":\"%s\"}",
@@ -586,6 +604,8 @@ void webBegin(void) {
   s_http.on("/api/wifi", HTTP_POST, handleWifi);
   s_http.on("/api/appass", HTTP_GET, handleApPassGet);
   s_http.on("/api/appass", HTTP_POST, handleApPassSet);
+  s_http.on("/api/cycle", HTTP_GET, handleCycleGet);
+  s_http.on("/api/cycle", HTTP_POST, handleCycleSet);
   s_http.on("/api/version", HTTP_GET, handleVersion);
   s_http.on("/api/reboot", HTTP_POST, handleReboot);
   s_http.onNotFound(handleNotFound);

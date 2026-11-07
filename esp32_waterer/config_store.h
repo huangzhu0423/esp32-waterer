@@ -20,6 +20,10 @@ uint32_t storeCrc(const ConfigBlob& c);
 const char* storeApPass(void);
 void        storeApPassSet(const char* p);   /* 立即落盘，调用方负责校验长度 */
 
+/* 采样周期（分钟）。同样走独立 key，改这个不会触发配置重置。 */
+uint16_t storeSampleCycle(void);
+void     storeSampleCycleSet(uint16_t min);  /* 越界的值直接忽略 */
+
 /* 泵启动标记：用于识别"带泵复位" */
 void storeRunMarkerSet(bool on);
 bool storeRunMarkerGet(void);

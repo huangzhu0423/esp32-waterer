@@ -16,6 +16,7 @@ static ConfigBlob  s_cfg;
 static bool        s_dirty = false;
 static uint32_t    s_dirtyAt = 0;
 static char        s_apPass[AP_PASS_MAX_LEN + 1];
+static uint16_t    s_cycleMin = DEF_SAMPLE_CYCLE_MIN;
 
 /* ---------- CRC32（多项式 0xEDB88320，逐位实现，省一张表） ---------- */
 uint32_t storeCrc(const ConfigBlob& c) {
@@ -57,6 +58,10 @@ void storeBegin(void) {
   strncpy(s_apPass, DEF_AP_PASS, sizeof(s_apPass) - 1);
   s_apPass[sizeof(s_apPass) - 1] = 0;
 
+  /* 采样周期同理先给默认值：读到 0 会让"距上次采样已超周期"恒成立，
+     等于每个 tick 都开一轮采样，把系统直接拖死。 */
+  s_cycleMin = DEF_SAMPLE_CYCLE_MIN;
+
   if (s_pref.begin(NS_CFG, false)) {
     size_t got = s_pref.getBytesLength("cfg");
     if (got == sizeof(ConfigBlob)) {
@@ -77,6 +82,15 @@ void storeBegin(void) {
       strncpy(s_apPass, DEF_AP_PASS, sizeof(s_apPass) - 1);
       s_apPass[sizeof(s_apPass) - 1] = 0;
       s_pref.putString("appass", s_apPass);
+    }
+
+    /* 采样周期：独立 key，越界或缺失都回落到出厂值 */
+    uint16_t cy = s_pref.getUShort("cycle", DEF_SAMPLE_CYCLE_MIN);
+    if (cy >= SAMPLE_CYCLE_MIN && cy <= SAMPLE_CYCLE_MAX) {
+      s_cycleMin = cy;
+    } else {
+      s_cycleMin = DEF_SAMPLE_CYCLE_MIN;
+      s_pref.putUShort("cycle", s_cycleMin);
     }
 
     s_pref.end();
@@ -123,6 +137,20 @@ void storeApPassSet(const char* p) {
 
   if (s_pref.begin(NS_CFG, false)) {
     s_pref.putString("appass", s_apPass);
+    s_pref.end();
+  }
+}
+
+/* ---------- 采样周期 ---------- */
+uint16_t storeSampleCycle(void) { return s_cycleMin; }
+
+void storeSampleCycleSet(uint16_t min) {
+  /* 越界直接忽略：0 会让"距上次采样已超周期"恒成立，采样循环失控；
+     太长又会一直拿着过期读数做判断 */
+  if (min < SAMPLE_CYCLE_MIN || min > SAMPLE_CYCLE_MAX) return;
+  s_cycleMin = min;
+  if (s_pref.begin(NS_CFG, false)) {
+    s_pref.putUShort("cycle", min);
     s_pref.end();
   }
 }

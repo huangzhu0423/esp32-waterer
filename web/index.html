@@ -189,6 +189,19 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       <div class="hint">改完马上生效，所有已连设备会断开，需要用新密码重连。</div>
     </div>
     <div class="panel">
+      <h3>采样周期</h3>
+      <div class="row"><span class="grow">间隔</span>
+        <select id="cycSel" style="width:130px">
+          <option value="15">15 分钟</option>
+          <option value="30">30 分钟</option>
+          <option value="60">1 小时</option>
+          <option value="120">2 小时</option>
+          <option value="240">4 小时</option>
+        </select>
+      </div>
+      <div class="hint">间隔短响应快，继电器动作也频繁。浇水后会立刻补采一次，不受这个间隔限制。</div>
+    </div>
+    <div class="panel">
       <h3>设备</h3>
       <div class="row"><span class="grow">工作模式</span><b id="dMode">—</b></div>
       <div class="row"><span class="grow">IP 地址</span><b id="dIp">—</b></div>
@@ -804,6 +817,23 @@ $('#apSave').addEventListener('click', function(){
   });
 });
 
+/* 采样周期：读一次填进下拉，改动即时生效 */
+function loadCycle(){
+  if(!live) return;
+  fetch('/api/cycle').then(function(r){ return r.json(); }).then(function(d){
+    if(d && d.ok && $('#cycSel')) $('#cycSel').value = String(d.min);
+  }).catch(function(){});
+}
+
+$('#cycSel').addEventListener('change', function(){
+  var v = +this.value;
+  if(!live){ toast('预览模式下不可用'); return; }
+  api('/api/cycle', {min:v}).then(function(r){
+    if(r && r.ok) toast('采样周期改为 ' + (v >= 60 ? (v/60)+' 小时' : v+' 分钟'));
+    else toast('设置失败');
+  });
+});
+
 /* ---------- 启动 ---------- */
 function boot(){
   initChannels();
@@ -825,6 +855,7 @@ function boot(){
     addLog('已连接设备', 'ok', -1);
     loadTasks();
     loadApPass();
+    loadCycle();
     pollLogs();
   }).catch(function(){
     clearTimeout(to);

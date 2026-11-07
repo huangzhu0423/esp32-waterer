@@ -147,7 +147,13 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
   #define SENSOR_PWR_OFF_LEVEL LOW
 #endif
 
-#define SENSOR_CYCLE_MS   1800000UL  /* 采集周期 30 分钟 */
+/* 采样周期：运行时可在网页调，这里只定义默认值与边界。
+ * 单独存 NVS 的 "cycle" 键，不进 ConfigBlob——否则改一次参数就要重置整份配置。
+ * 下限 5 分钟：再短就是白耗继电器触点寿命，土湿变化也没那么快。
+ * 上限 6 小时：再长会拿着很久以前的读数判断，容易把植物渴过头。 */
+#define DEF_SAMPLE_CYCLE_MIN   30    /* 出厂 30 分钟一轮 */
+#define SAMPLE_CYCLE_MIN        5
+#define SAMPLE_CYCLE_MAX      360
 #define SENSOR_SETTLE_MS      500    /* 上电后等探头输出稳定（内部有滤波电容） */
 #define SENSOR_READ_GAP_MS     20    /* 相邻两次采样的间隔，给 ADC 采样电容充电 */
 #define SENSOR_REPEAT           3    /* 每路连采几遍：让故障计数能在同一轮里攒满 */
