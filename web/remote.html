@@ -228,7 +228,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
         <div style="padding:6px 0 4px"><input type="text" id="user" placeholder="用户名 / uid" autocomplete="off"></div>
         <div style="padding:6px 0 4px"><input type="password" id="pass" placeholder="密码（巴法云同 uid）" autocomplete="off"></div>
         <div style="padding:6px 0 4px"><input type="text" id="devid" placeholder="设备 ID，如 aw_AF48" autocomplete="off"></div>
-        <div style="padding:6px 0 4px"><input type="text" id="token" placeholder="指令令牌（须与设备端一致）" autocomplete="off"></div>
+        <div style="padding:6px 0 4px"><input type="text" id="token" placeholder="指令令牌，建议 dahuang2026（设备端须一致）" autocomplete="off"></div>
         <div class="row"><span class="grow">默认浇水（秒）</span><input type="number" id="sec" value="15" min="1" max="300" style="width:90px;text-align:center"></div>
         <div style="display:flex;gap:8px;padding:12px 0">
           <button class="btn ghost sm" id="clearCfg">清除</button>
@@ -236,7 +236,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
         </div>
       </details>
     </div>
-    <div class="hint">首次只需填 uid 和令牌，之后打开本页会自动连接。配置只存在这台手机里，一键配置链接可用于换手机。</div>
+    <div class="hint">服务器、设备 ID、uid 已预填，只需填指令令牌；设备端「远程 MQTT」的令牌必须填同一个值。保存一次后打开本页自动连接。配置只存在这台手机里，一键配置链接可用于换手机。</div>
   </div>
 </div>
 
@@ -251,7 +251,7 @@ var N=6, RING_C=2*Math.PI*26;
 var CH=[], TASKS=[], client=null, connected=false;
 var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null;
 var CFG_KEY='mqtt_dash_v2', TAB_KEY='mqtt_dash_tab';
-var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'',pass:'',token:'',sec:15};
+var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'c90294a7be154afb80b9d63900da8f4a',pass:'c90294a7be154afb80b9d63900da8f4a',token:'',sec:15};
 var cfg=DEF;
 
 function $(s){ return document.querySelector(s); }
@@ -301,7 +301,8 @@ function formToCfg(){
   return c;
 }
 function saveCfg(c){ cfg=c; localStorage.setItem(CFG_KEY,JSON.stringify(c)); $('#dDev').textContent=c.devid; fillForm(); }
-function ready(){ return !!(cfg.broker && cfg.user && cfg.devid); }
+/* 令牌留空时不自动连接：设备端配了令牌却没在这里填，指令会被静默忽略 */
+function ready(){ return !!(cfg.broker && cfg.user && cfg.devid && cfg.token); }
 
 /* ---------- 通道 ---------- */
 function initChannels(){
@@ -488,6 +489,7 @@ function connect(){
   cfg=formToCfg();
   if(!cfg.broker){ toast('先填 broker 地址'); return; }
   if(!cfg.devid){ toast('先填设备 ID'); return; }
+  if(!cfg.token){ toast('先填指令令牌'); $('#confBox').open=true; $('#token').focus(); return; }
   /* 巴法云用户名与密码都是 uid，密码留空时自动跟随，少填一格 */
   if(/bemfa\.com/i.test(cfg.broker) && cfg.user && !cfg.pass){ cfg.pass=cfg.user; $('#pass').value=cfg.pass; }
   saveCfg(cfg);
@@ -594,7 +596,8 @@ switchTab(localStorage.getItem(TAB_KEY)||'ch');
 if(!ready()){
   $('#confBox').open=true;
   switchTab('set');
-  toast('首次使用：填 uid 和令牌');
+  $('#token').focus();
+  toast('填指令令牌（设备端须填同一个值）');
 }else{
   connect();
 }
