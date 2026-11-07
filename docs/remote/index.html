@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f4f6fa">
+<title>远程浇水</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="浇水">
+<meta name="mobile-web-app-capable" content="yes">
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:#f4f6fa;color:#16202e;font:15px/1.45 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding-bottom:28px}
+.wrap{max-width:520px;margin:0 auto;padding:16px 14px 0}
+.hd{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.hd h1{font-size:19px;font-weight:650;letter-spacing:.3px;margin:0}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:5px 10px;border-radius:99px;background:#e8f0ff;color:#2563eb;font-weight:600;white-space:nowrap}
+.pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.off{background:#ffeced;color:#e5484d}
+.pill.ok{background:#e6f7f1;color:#0F6E56}
+.sub{font-size:12px;color:#7b8899;margin:3px 0 14px}
+.banner{display:none;background:#ffeced;color:#c22c30;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:10px;margin-bottom:12px}
+.banner.on{display:block}
+
+.panel{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:4px 14px;margin-bottom:12px}
+.row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f1f4f9;font-size:13.5px}
+.row:last-child{border-bottom:0}
+.row .grow{flex:1;min-width:0}
+.row .lb{color:#5b6b80;font-size:11.5px;margin-top:2px}
+.panel h3{font-size:12px;font-weight:600;color:#9aa7b6;letter-spacing:.6px;margin:14px 0 0;padding-bottom:6px}
+.hint{font-size:12px;color:#0F6E56;line-height:1.6;padding:10px 0 4px}
+
+input[type=text],input[type=password],input[type=number],select{font:inherit;font-size:13.5px;color:#16202e;background:#f7f9fc;border:1px solid #e6ebf2;border-radius:9px;padding:9px 11px;width:100%;outline:none;transition:.16s}
+input:focus,select:focus{border-color:#bfd4ff;background:#fff;box-shadow:0 0 0 3px #eef4ff}
+.btn{border:0;border-radius:9px;font:inherit;font-size:13px;font-weight:600;padding:10px 16px;background:#2563eb;color:#fff;cursor:pointer;transition:.16s;white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn.ghost{background:#f0f4fa;color:#5b6b80}
+.btn.sm{padding:7px 12px;font-size:12px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.card{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:14px 11px 11px;display:flex;flex-direction:column;align-items:center;gap:7px;position:relative;transition:border-color .2s,box-shadow .2s}
+.card.run{border-color:#bfd4ff;box-shadow:0 0 0 3px #eef4ff}
+.card.fault{opacity:.6}
+.ring{position:relative;width:78px;height:78px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg);display:block}
+.ring .trk{fill:none;stroke:#eef2f8;stroke-width:7}
+.ring .val{fill:none;stroke:#2563eb;stroke-width:7;stroke-linecap:round;transition:stroke-dashoffset .5s,stroke .3s}
+.ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:17px;font-weight:650;letter-spacing:-.2px}
+.ring .num i{font-size:10px;font-style:normal;font-weight:500;color:#9aa7b6;margin-left:1px}
+.nm{font-size:13px;font-weight:600;max-width:100%}
+.dt{font-size:11px;color:#9aa7b6;margin-top:-4px;font-variant-numeric:tabular-nums}
+.chip{font-size:10px;padding:2px 7px;border-radius:99px;background:#eef4ff;color:#2563eb;font-weight:600}
+.chip.off{background:#f0f4fa;color:#8d9aab}
+.chip.err{background:#ffeced;color:#e5484d}
+.wbtn{width:100%;height:36px;border:0;border-radius:10px;background:#2563eb;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .18s,transform .1s}
+.wbtn:active{transform:scale(.97)}
+.wbtn.run{background:#e5484d}
+.chiprow{display:flex;align-items:center;gap:6px;margin-top:2px}
+.sw{position:relative;width:38px;height:22px;flex:none;display:block}
+.sw input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer;z-index:2}
+.sw i{position:absolute;inset:0;background:#dde4ee;border-radius:99px;transition:background .2s}
+.sw i:after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.sw input:checked+i{background:#2563eb}
+.sw input:checked+i:after{transform:translateX(16px)}
+#toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translate(-50%,16px);background:rgba(22,32,46,.94);color:#fff;font-size:13px;padding:10px 18px;border-radius:99px;opacity:0;transition:.24s;pointer-events:none;z-index:40;max-width:86vw;text-align:center}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <h1>远程浇水</h1>
+    <span class="pill off" id="conn"><span class="dot"></span><span id="connT">未连接</span></span>
+  </div>
+  <div class="sub" id="subline">连上 broker 后自动同步 6 路状态</div>
+  <div class="banner" id="banner"></div>
+
+  <!-- 连接设置 -->
+  <div class="panel">
+    <h3>连接</h3>
+    <div style="padding:10px 0 4px"><input type="text" id="broker" placeholder="WebSocket 地址，如 wss://broker.emqx.io:8084/mqtt"></div>
+    <div style="padding:6px 0 4px"><input type="text" id="user" placeholder="broker 用户名（可空）" autocomplete="off"></div>
+    <div style="padding:6px 0 4px"><input type="password" id="pass" placeholder="broker 密码（可空）" autocomplete="off"></div>
+    <div style="padding:6px 0 4px"><input type="text" id="devid" placeholder="设备ID，如 aw_A1B2（见热点名 AutoWater-A1B2）" autocomplete="off"></div>
+    <div style="padding:6px 0 4px"><input type="text" id="token" placeholder="指令令牌（须与设备端一致）" autocomplete="off"></div>
+    <div class="row"><span class="grow">每次浇水（秒）</span><input type="number" id="sec" value="15" min="1" max="300" style="width:90px;text-align:center"></div>
+    <div style="display:flex;gap:8px;padding:12px 0">
+      <button class="btn sm ghost" id="save">保存</button>
+      <button class="btn sm" id="connect" style="flex:1">连接</button>
+    </div>
+    <div class="hint">broker 必须支持 WebSocket（TCP 与 WS 主题互通，设备走 TCP 不受影响）。EMQX 公共服：<b>wss://broker.emqx.io:8084/mqtt</b>；巴法云：<b>wss://bemfa.com:8444/mqtt</b>（用户/密码都填你的 uid）。设备ID = <b>aw_</b> + 热点名后四位。</div>
+  </div>
+
+  <!-- 设备信息 -->
+  <div class="panel" id="devPanel" hidden>
+    <h3>设备</h3>
+    <div class="row"><span class="grow">固件</span><b id="dFw">—</b></div>
+    <div class="row"><span class="grow">模式</span><b id="dMode">—</b></div>
+    <div class="row"><span class="grow">IP</span><b id="dIp">—</b></div>
+    <div class="row"><span class="grow">信号</span><b id="dRssi">—</b></div>
+    <div class="row"><span class="grow">在线时长</span><b id="dUp">—</b></div>
+    <div class="row"><span class="grow">最近更新</span><b id="dSeen">—</b></div>
+  </div>
+
+  <!-- 通道 -->
+  <div class="grid" id="grid"></div>
+</div>
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+var N = 6;
+var RING_C = 2 * Math.PI * 26;
+var CH = [];
+var client = null;
+var connected = false;
+var prefix = "";
+var token = "";
+
+function $(s){ return document.querySelector(s); }
+function el(t,c,txt){ var e=document.createElement(t); if(c) e.className=c; if(txt!=null) e.textContent=txt; return e; }
+function pad2(n){ return n<10?'0'+n:''+n; }
+function hhmmss(sec){ var h=Math.floor(sec/3600),m=Math.floor(sec%3600/60),s=sec%60; return h>0?(h+':'+pad2(m)+':'+pad2(s)):(pad2(m)+':'+pad2(s)); }
+function clockNow(){ var d=new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
+function toast(m){ var t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove('on');},2000); }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+
+/* ---------- 通道初始化 ---------- */
+function initChannels(){
+  CH=[];
+  for(var i=0;i<N;i++) CH.push({i:i,raw:0,pct:0,flt:0,auto:false,run:false,name:''});
+}
+function buildGrid(){
+  var g=$('#grid'); g.innerHTML='';
+  for(var i=0;i<N;i++){
+    var card=el('div','card'); card.dataset.i=i;
+    var ring=el('div','ring');
+    ring.innerHTML='<svg viewBox="0 0 64 64"><circle class="trk" cx="32" cy="32" r="26"></circle>'+
+      '<circle class="val" cx="32" cy="32" r="26" stroke-dasharray="'+RING_C.toFixed(1)+'" stroke-dashoffset="'+RING_C.toFixed(1)+'"></circle></svg>'+
+      '<div class="num"><span class="p">0</span><i>%</i></div>';
+    var nm=el('div','nm','通道 '+(i+1));
+    var chip=el('span','chip off','关闭');
+    var dt=el('div','dt','raw 0');
+    var wbtn=el('button','wbtn','浇水'); wbtn.dataset.i=i; wbtn.addEventListener('click',function(){ onWater(+this.dataset.i); });
+    var stopbtn=el('button','wbtn run','停止'); stopbtn.dataset.i=i; stopbtn.hidden=true;
+    stopbtn.addEventListener('click',function(){ onStop(+this.dataset.i); });
+    var autoL=el('label','sw'); var cb=el('input'); cb.type='checkbox'; cb.dataset.i=i;
+    cb.addEventListener('change',function(){ onAuto(+this.dataset.i, this.checked); });
+    autoL.appendChild(cb); autoL.appendChild(el('i'));
+    var chiprow=el('div','chiprow'); var al=el('span','',null); al.style.cssText='font-size:11px;color:#5b6b80'; al.textContent='自动';
+    chiprow.appendChild(autoL); chiprow.appendChild(al);
+    card.appendChild(ring); card.appendChild(nm); card.appendChild(chip); card.appendChild(dt);
+    card.appendChild(wbtn); card.appendChild(stopbtn); card.appendChild(chiprow);
+    g.appendChild(card);
+  }
+}
+function updateCard(i){
+  var c=CH[i], card=$('#grid').children[i]; if(!card) return;
+  var pct=c.pct;
+  var off=RING_C*(1-pct/100);
+  var val=card.querySelector('.val'); val.style.strokeDashoffset=off.toFixed(1);
+  val.style.stroke = c.flt? '#d7dfe9' : (pct<30?'#e0a300':'#2563eb');
+  card.querySelector('.num .p').textContent = c.flt? '--' : pct;
+  card.querySelector('.nm').textContent = '通道 '+(i+1);
+  card.querySelector('.dt').textContent = c.flt? ('raw '+c.raw+' '+(c.flt===5?'无供电':'断线')) : 'raw '+c.raw;
+  var chip=card.querySelector('.chip');
+  if(c.flt){ chip.className='chip err'; chip.textContent=(c.flt===5?'供电':'故障'); }
+  else if(c.run){ chip.className='chip'; chip.textContent='浇水'; }
+  else if(c.auto){ chip.className='chip'; chip.textContent='自动'; }
+  else { chip.className='chip off'; chip.textContent='关闭'; }
+  var wbtn=card.querySelector('.wbtn'), stop=card.querySelector('.wbtn.run');
+  if(c.run){ wbtn.hidden=true; stop.hidden=false; }
+  else { wbtn.hidden=false; stop.hidden=true; }
+  card.querySelector('.sw input').checked = !!c.auto;
+  card.className='card'+(c.run?' run':'')+(c.flt?' fault':'');
+}
+function renderAll(){ for(var i=0;i<N;i++) updateCard(i); }
+
+/* ---------- 状态解析 ---------- */
+function applyState(s){
+  if(!s||!s.ch) return;
+  $('#devPanel').hidden=false;
+  for(var i=0;i<N&&i<s.ch.length;i++){
+    var d=s.ch[i], c=CH[i];
+    c.raw=d.raw||0; c.pct=d.pct||0; c.flt=d.flt||0;
+    c.auto=!!d.auto; c.run=!!d.run;
+  }
+  if(s.active){ CH[s.active.ch].run=true; }
+  var act=s.active?('通道 '+(s.active.ch+1)+' 浇水中'):'空闲';
+  $('#subline').textContent='6 路 · '+act;
+  $('#dFw').textContent=s.fw||'—';
+  $('#dMode').textContent=(s.mode==='sta')?'路由器模式':'热点模式';
+  $('#dIp').textContent=s.ip||'—';
+  $('#dRssi').textContent=s.rssi? s.rssi+' dBm':'—';
+  $('#dUp').textContent=hhmmss(s.up||0);
+  $('#dSeen').textContent=clockNow();
+  renderAll();
+}
+
+/* ---------- 指令 ---------- */
+function send(ch, a, extra){
+  if(!connected||!client){ toast('尚未连接'); return; }
+  var o={t:token, ch:ch, a:a};
+  if(extra) for(var k in extra) o[k]=extra[k];
+  client.publish(prefix+'/cmd', JSON.stringify(o), {qos:0,retain:false});
+}
+function onWater(i){ var sec=clamp(+$('#sec').value||15,1,300); send(i,'start',{s:sec}); toast('通道'+(i+1)+' 浇水 '+sec+'s'); }
+function onStop(i){ send(i,'stop'); toast('通道'+(i+1)+' 停止'); }
+function onAuto(i,on){ send(i,'auto',{on:on?1:0}); toast('通道'+(i+1)+' 自动'+(on?'开':'关')); }
+
+/* ---------- 连接 ---------- */
+function loadSettings(){
+  try{
+    var s=JSON.parse(localStorage.getItem('mqtt_dash')||'{}');
+    if(s.broker) $('#broker').value=s.broker;
+    if(s.user) $('#user').value=s.user;
+    if(s.pass) $('#pass').value=s.pass;
+    if(s.devid) $('#devid').value=s.devid;
+    if(s.token) $('#token').value=s.token;
+    if(s.sec) $('#sec').value=s.sec;
+  }catch(e){}
+}
+function saveSettings(){
+  var s={broker:$('#broker').value.trim(),user:$('#user').value.trim(),pass:$('#pass').value,
+         devid:$('#devid').value.trim(),token:$('#token').value.trim(),sec:$('#sec').value};
+  localStorage.setItem('mqtt_dash',JSON.stringify(s));
+  toast('已保存');
+}
+function setConn(state, txt){
+  connected=state;
+  $('#conn').className='pill '+(state?'ok':'off');
+  $('#connT').textContent=txt||(state?'已连接':'未连接');
+}
+function connect(){
+  if(typeof mqtt==='undefined'){ toast('mqtt.js 没加载（需联网）'); return; }
+  if(client){ try{client.end(true);}catch(e){} }
+  var url=$('#broker').value.trim();
+  if(!url){ toast('先填 broker 地址'); return; }
+  prefix=($('#devid').value.trim()||'aw_xxxx').replace(/\/+$/,'');
+  token=$('#token').value.trim();
+  var opt={clientId:'dash_'+Math.random().toString(16).slice(2,10),clean:true,reconnectPeriod:4000,connectTimeout:8000};
+  var u=$('#user').value.trim(), p=$('#pass').value;
+  if(u) opt.username=u; if(p) opt.password=p;
+  setConn(false,'连接中…');
+  client=mqtt.connect(url,opt);
+  client.on('connect',function(){ setConn(true); client.subscribe(prefix+'/state',{qos:0}); client.subscribe(prefix+'/avail',{qos:0}); });
+  client.on('reconnect',function(){ setConn(false,'重连中…'); });
+  client.on('close',function(){ setConn(false,'已断开'); });
+  client.on('offline',function(){ setConn(false,'离线'); });
+  client.on('error',function(e){ $('#banner').classList.add('on'); $('#banner').textContent='连接错误：'+(e&&e.message?e.message:e); });
+  client.on('message',function(topic,payload){
+    try{
+      var s=JSON.parse(payload.toString());
+      if(topic===prefix+'/state') applyState(s);
+    }catch(e){}
+  });
+}
+
+/* ---------- 启动 ---------- */
+initChannels(); buildGrid(); renderAll(); loadSettings();
+$('#save').addEventListener('click',saveSettings);
+$('#connect').addEventListener('click',connect);
+})();
+</script>
+</body>
+</html>
