@@ -50,6 +50,34 @@ static char      s_in[512];             /* 命令回调的临时缓冲 */
 static uint8_t  s_reply = 0;
 static bool     s_rebootReq = false;
 
+/* 命令被拒绝时不能静默丢弃：前端点了按钮却什么都不发生，用户无从判断
+   是令牌错、探头断线还是设备离线。统一排队一条 {"k":"e"} 帧，
+   回到 mqttTick 里发（callback 里不 publish）。 */
+/* 实体在下面，先给原型 */
+static int  app2(char* b, int n, size_t cap, const char* fmt, ...);
+static void publishJson(const char* b);
+
+static char  s_err[16]  = {0};
+static char  s_errAct[12] = {0};
+static long  s_errCh = -1;
+static bool  s_errPending = false;
+static void queueErr(const char* err, long ch, const char* act) {
+  if (s_errPending) return;                 /* 同一拍只保留第一条，避免刷屏 */
+  strncpy(s_err, err, sizeof(s_err) - 1);      s_err[sizeof(s_err) - 1] = 0;
+  strncpy(s_errAct, act ? act : "", sizeof(s_errAct) - 1); s_errAct[sizeof(s_errAct) - 1] = 0;
+  s_errCh = ch;
+  s_errPending = true;
+}
+static void publishErr(void) {
+  if (!s_conn || !s_errPending) return;
+  char b[160];
+  app2(b, 0, sizeof(b), "{\"k\":\"e\",\"err\":\"%s\",\"ch\":%ld,\"act\":\"%s\"}",
+       s_err, s_errCh, s_errAct);
+  b[sizeof(b) - 1] = 0;
+  publishJson(b);
+  s_errPending = false;
+}
+
 /* ================= 极简 JSON 拼接 ================= */
 static int app2(char* b, int n, size_t cap, const char* fmt, ...) {
   if (n < 0) return 0;
@@ -410,7 +438,10 @@ static void onMessage(char* topic, byte* payload, unsigned int len) {
   char tk[MQTT_TOKEN_MAX_LEN + 1];
   bool hasTok = jUtilStr(body, "t", tk, sizeof(tk));
   if (s_token[0] != 0) {
-    if (!hasTok || strncmp(tk, s_token, MQTT_TOKEN_MAX_LEN) != 0) return;
+    if (!hasTok || strncmp(tk, s_token, MQTT_TOKEN_MAX_LEN) != 0) {
+      queueErr("token", -1, "cmd");
+      return;
+    }
   }
 
   char act[12];
@@ -448,7 +479,7 @@ static void onMessage(char* topic, byte* payload, unsigned int len) {
   if (strcmp(act, "reboot") == 0) { s_rebootReq = true; return; }
 
   /* --- 以下动作必须带合法通道号 --- */
-  if (ch < 0 || ch >= CHANNEL_COUNT) return;
+  if (ch < 0 || ch >= CHANNEL_COUNT) { queueErr("bad_ch", ch, act); return; }
 
   if (strcmp(act, "stop") == 0) {
     if (pumpIsActive() && pumpActiveCh() == (int8_t)ch) pumpStop(STOP_MANUAL);
@@ -479,9 +510,23 @@ static void onMessage(char* topic, byte* payload, unsigned int len) {
   long sec = jUtilInt(body, "s", storeCfg().ch[ch].maxSec);
   if (sec < 1) sec = 1;
   if (sec > HARD_MAX_SEC) sec = HARD_MAX_SEC;
-  if (schedRequest((uint8_t)ch, (uint32_t)sec * 1000UL, SRC_MANUAL) == REQ_OK) {
+  uint8_t r = schedRequest((uint8_t)ch, (uint32_t)sec * 1000UL, SRC_MANUAL);
+  if (r == REQ_OK) {
     /* 开泵日志里带本次设定秒数，远程页点完浇水马上能看到 */
     s_reply |= REPLY_STATE | REPLY_LOGS;
+  } else {
+    /* 断线/短路通道连手动都禁止：必须把原因回给页面，否则点了像死机 */
+    const char* e = "invalid";
+    switch (r) {
+      case REQ_ERR_FAULT:    e = "sensor_fault"; break;
+      case REQ_ERR_BUDGET:   e = "budget";       break;
+      case REQ_ERR_BUSY:     e = "busy";         break;
+      case REQ_ERR_COOLDOWN: e = "cooldown";    break;
+      case REQ_ERR_LOCKOUT:  e = "lockout";     break;
+      default: break;
+    }
+    queueErr(e, ch, "start");
+    s_reply |= REPLY_STATE;   /* 顺带把真实状态刷回来 */
   }
 }
 
@@ -615,6 +660,9 @@ void mqttTick(uint32_t nowMs) {
     s_publishNow = false;
     publishState();
   }
+
+  /* 被拒绝的指令最后回一帧原因，前端不会再「点了没反应」 */
+  publishErr();
 }
 
 void mqttPublishState(void) { s_publishNow = true; }

@@ -72,6 +72,7 @@ body{background:#f4f6fa;color:#16202e;font:15px/1.45 system-ui,-apple-system,"Se
 .wbtn{width:100%;height:36px;border:0;border-radius:10px;background:#2563eb;color:#fff;font:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .18s,transform .1s}
 .wbtn:active{transform:scale(.97)}
 .wbtn.run{background:#e5484d}
+.wbtn.dis,.wbtn:disabled{background:#e8edf3;color:#9aa7b6;cursor:not-allowed}
 .panel{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:4px 14px;margin-bottom:12px}
 .row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f1f4f9;font-size:13.5px}
 .row:last-child{border-bottom:0}
@@ -299,6 +300,13 @@ function tick(){
   if(lastPumpAbsMs && $('#logGap')) $('#logGap').textContent='上次浇水：'+bjFull(lastPumpAbsMs)+' · 距今 '+fmtGap(Math.floor((Date.now()-lastPumpAbsMs)/1000));
 }
 function toast(m){ var t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(toast._t); toast._t=setTimeout(function(){t.classList.remove('on');},2200); }
+var ERRMAP={token:'指令令牌不对，去设置页检查',sensor_fault:'传感器故障，禁止浇水',
+  bad_ch:'通道号无效',budget:'超出每小时浇水上限',busy:'泵正忙，稍后再试',
+  cooldown:'未到最小浇水间隔',lockout:'设备锁定期内',invalid:'指令无效'};
+function errText(e){
+  var base=ERRMAP[e.err]||('指令被拒绝：'+(e.err||'unknown'));
+  return (+e.ch>=0?('通道 '+(+e.ch+1)+'：'):'')+base;
+}
 function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
 function esc(s){ return String(s||'').replace(/[&<>"']/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function mqTopic(sub){ if(!bemfa) return prefix+'/'+sub; var flat=prefix.replace(/[^A-Za-z0-9]/g,''); return flat+(sub==='cmd'?'ctrl':sub); }
@@ -392,6 +400,11 @@ function updateCard(i){
   else { chip.className='chip off'; chip.textContent='关闭'; }
   var wbtn=card.querySelector('.wbtn'), stop=card.querySelector('.wbtn.run');
   if(c.run){ wbtn.hidden=true; stop.hidden=false; } else { wbtn.hidden=false; stop.hidden=true; }
+  if(c.flt && !c.run){
+    wbtn.disabled=true; wbtn.textContent='传感器故障'; wbtn.classList.add('dis');
+  }else{
+    wbtn.disabled=false; wbtn.textContent='浇水'; wbtn.classList.remove('dis');
+  }
   card.querySelector('.sw input').checked=!!c.auto;
   card.className='card'+(c.run?' run':'')+(c.flt?' fault':'');
 }
@@ -428,6 +441,7 @@ function openSheet(i){
   $('#sSave').addEventListener('click',saveSheet);
   $('#sCalDry').addEventListener('click',function(){ send({a:'cal',ch:i,wet:0}); toast('干点已记录'); });
   $('#sCalWet').addEventListener('click',function(){ send({a:'cal',ch:i,wet:1}); toast('湿点已记录'); });
+  if(c.flt){ var bw=$('#sWater'); bw.disabled=true; bw.textContent='传感器故障，禁止浇水'; bw.classList.add('dis'); }
   $('#sWater').addEventListener('click',function(){ onWater(i,draft.maxSec); });
   $('#mask').classList.add('on'); $('#sheet').classList.add('on');
 }
@@ -530,8 +544,9 @@ function send(o){
 }
 function onWater(i,override){
   var c=CH[i]||{};
+  if(c.flt){ toast('通道 '+(i+1)+' 传感器故障，禁止浇水'); return; }
   var sec=clamp(+(override!=null?override:c.maxSec)||15,1,300);
-  if(send({a:'start',ch:i,s:sec})) toast(chName(i)+' 浇水 '+sec+'s');
+  if(send({a:'start',ch:i,s:sec})) toast(chName(i)+' 已发送浇水 '+sec+'s 指令');
 }
 
 /* ---------- 状态解析 ---------- */
@@ -623,10 +638,11 @@ function connect(){
     }
     try{
       var s=JSON.parse(payload.toString());
+      if(s.k==='e'){ toast(errText(s)); return; }
       if(s.k==='t'){ TASKS=s.tasks||[]; renderTasks(); }
       /* 日志帧自带 boot，即使状态帧还没到也能显示北京时间 */
       else if(s.k==='l'){ if(+s.boot>0) bootWallMs=+s.boot*1000; renderLogs(s.items||[]); }
-      else applyState(s);
+      else if(s.k==='s'||!s.k) applyState(s);
     }catch(e){}
   });
 }

@@ -160,7 +160,7 @@
 ## GET /api/version
 
 ```json
-{ "ok":1, "fw":"1.1.1", "build":"Nov  7 2026 23:59:00", "ap":"AutoWater-3F2A" }
+{ "ok":1, "fw":"1.1.2", "build":"Nov  8 2026 00:30:00", "ap":"AutoWater-3F2A" }
 ```
 
 ## POST /api/reboot
@@ -176,11 +176,13 @@
 | `s` | 状态：六路读数 + 通道配置 + `up/wall/boot/tz` + `active` | 每 30 秒、或任何配置/浇水命令后 |
 | `t` | `tasks[]` 定时任务 | `get` / `task` 命令 |
 | `l` | `items[]` 最近 12 条日志 | `get` / 浇水开始与停止 / 标定 |
+| `e` | `{err, ch, act}` 指令被拒绝的原因 | 令牌错误 / 通道号非法 / 调度拒绝 |
 
 - `wall` 当前 UTC epoch 秒、`boot` 开机时刻 UTC epoch 秒、`tz=28800`，含义与 `/api/logs` 相同。
 - 日志项额外带 `w`（绝对 UTC epoch）与 `d`（浇水秒数）。
 - NTP 未同步时 `wall=boot=w=0`，远程页回落到「收到状态帧的时刻 − up」反推，不会显示错时间。
 - 设备端 `start` 命令读 `s` 字段作为本次时长，缺省才回落该通道 `maxSec`，上限 `HARD_MAX_SEC=300`。
+- **`k=e` 是 1.1.2 新增的失败应答**：此前令牌不对或探头断线时设备直接丢弃指令、不回任何帧，页面表现为「点了没反应」。现在 `err` 取 `token` / `bad_ch` / `sensor_fault` / `budget` / `busy` / `cooldown` / `lockout` / `invalid`，远程页会弹中文提示。故障通道的浇水按钮同时置灰。
 
 ## 设计取舍
 

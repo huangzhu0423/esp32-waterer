@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 /* ================= 固件信息 ================= */
-#define FW_VERSION   "1.1.1"
+#define FW_VERSION   "1.1.2"
 #define FW_BUILD     __DATE__ " " __TIME__
 
 /* ================= 规模 ================= */
