@@ -100,10 +100,13 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
  * 方案 A：继电器模块（接线最简单，推荐）
  *   3V3  ── 继电器 COM
  *   继电器 NO ── 传感器 VCC 母线（六路探头 VCC 并在一起）
- *   继电器 IN ── GPIO27       模块 VCC/GND 接 5V/GND
+ *   继电器 IN ── GPIO27       模块 VCC 接 3V3（线圈 3.3V 版）、GND 共地
  *   断开 VCC 是彻底隔离，AOUT 不会经内部电路倒灌，比断 GND 安全得多。
  *   常见模块是"高电平触发"，即 SENSOR_PWR_ACTIVE_LOW = 0；
  *   模块上有 H/L 跳线的，按跳线实际位置设。
+ *   注意先看清继电器外壳印的线圈电压：3.3VDC 版接 3V3，5VDC 版接 5V，
+ *   接错会烧线圈。3.3V 线圈单只吸合约 73mA，吸合瞬间建议在模块 VCC 旁
+ *   并 100~470uF 缓冲，否则浪涌可能把 3V3 拉低导致 ESP32 复位。
  *
  * 方案 B：P-MOS 高边开关（体积小、无触点磨损，但要会焊）
  *   3V3 ──[S] P-MOS [D]── 传感器 VCC 母线
