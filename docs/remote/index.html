@@ -202,6 +202,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
       <h3>采样周期</h3>
       <div class="row"><span class="grow">间隔</span>
         <select id="cycSel" style="width:130px">
+          <option value="" disabled selected>—</option>
           <option value="15">15 分钟</option>
           <option value="30">30 分钟</option>
           <option value="60">1 小时</option>
@@ -254,7 +255,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
 "use strict";
 var N=6, RING_C=2*Math.PI*26;
 var CH=[], TASKS=[], client=null, connected=false;
-var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null;
+var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null, devAvail=null;
 var CFG_KEY='mqtt_dash_v2', TAB_KEY='mqtt_dash_tab';
 var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'c90294a7be154afb80b9d63900da8f4a',pass:'c90294a7be154afb80b9d63900da8f4a',token:'',sec:15};
 var cfg=DEF;
@@ -456,7 +457,7 @@ function onWater(i){
 
 /* ---------- 状态解析 ---------- */
 function applyState(s){
-  gotState=true; clearTimeout(onlineTimer);
+  gotState=true; devAvail=true; clearTimeout(onlineTimer);
   $('#dAvail').textContent='在线';
   $('#devPanel') && ($('#devPanel').hidden=false);
   for(var i=0;i<N&&s.ch&&i<s.ch.length;i++){
@@ -510,14 +511,20 @@ function connect(){
   var opt={clientId:u||('dash_'+Math.random().toString(16).slice(2,10)),clean:true,reconnectPeriod:4000,connectTimeout:15000};
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
-  gotState=false; clearTimeout(onlineTimer);
+  gotState=false; devAvail=null; clearTimeout(onlineTimer);
+  /* 状态上报周期最长 30 秒，6 秒就判离线会把在线设备误报成未上线 */
   onlineTimer=setTimeout(function(){
-    if(!gotState){
+    if(gotState) return;
+    if(devAvail===true){
+      $('#stripTxt').textContent='设备在线 · 等待状态上报';
+      $('#subline').textContent='6 路 · 等待状态上报';
+      $('#dAvail').textContent='在线';
+    }else{
       $('#stripTxt').textContent='设备未上线 · 检查路由器与远程 MQTT';
       $('#subline').textContent='6 路 · 设备未上线';
       $('#dAvail').textContent='离线';
     }
-  },6000);
+  },35000);
   client=mqtt.connect(cfg.broker,opt);
   client.on('connect',function(){
     setConn(true);
@@ -532,8 +539,15 @@ function connect(){
   client.on('message',function(topic,payload){
     if(topic===mqTopic('avail')){
       var v=payload.toString();
-      $('#dAvail').textContent=(v==='online')?'在线':'离线';
-      if(v!=='online') $('#stripTxt').textContent='设备未上线 · 检查设备是否连上路由器';
+      devAvail=(v==='online');
+      $('#dAvail').textContent=devAvail?'在线':'离线';
+      if(devAvail && !gotState){
+        $('#stripTxt').textContent='设备在线 · 等待状态上报';
+        $('#subline').textContent='6 路 · 等待状态上报';
+      }else if(!devAvail){
+        $('#stripTxt').textContent='设备未上线 · 检查设备是否连上路由器';
+        $('#subline').textContent='6 路 · 设备未上线';
+      }
       return;
     }
     try{
