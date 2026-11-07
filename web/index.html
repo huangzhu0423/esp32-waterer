@@ -266,9 +266,12 @@ function clockNow(){ var d=new Date(); return pad2(d.getHours())+':'+pad2(d.getM
 function toast(msg){ var t=$('#toast'); t.textContent=msg; t.classList.add('on');
   clearTimeout(toast._t); toast._t=setTimeout(function(){ t.classList.remove('on'); },2000); }
 
-/* 湿度换算：干点 raw 高、湿点 raw 低 */
+/* 真机模式直接用固件算好的 pct；只有预览模式没有设备数据才由 raw 反推。
+   断线时 raw=0，前端反推会得到 (2800-0)/(2800-1150)=100%，
+   没接线的通道反而显示"最湿"、还能点浇水。 */
 function toPct(c){
   if(c.fault) return 0;
+  if(live) return clamp(c.pct|0, 0, 100);
   var span = c.dryRaw - c.wetRaw;
   if(span < 100) span = 100;
   return clamp(Math.round((c.dryRaw - c.raw) / span * 100), 0, 100);
@@ -678,6 +681,9 @@ function applyState(s){
   for(var i=0;i<N && i<s.ch.length;i++){
     var d = s.ch[i], c = CH[i];
     c.raw = d.raw; c.pct = d.pct; c.fault = d.flt||0;
+    /* 兼容旧固件 / 缓存的旧页面：低于 ADC_OPEN_RAW(400) 是悬空或断线，
+       即便固件漏报 flt 也不许显示成可浇水的正常通道 */
+    if(c.raw < 400) c.fault = c.fault || 1;
     if(d.name != null) c.name = d.name;
     if(d.auto != null) c.auto = !!d.auto;
     if(d.dry != null) c.dryRaw = d.dry;   /* 标定后由固件回传，前端不自己猜 */

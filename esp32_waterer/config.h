@@ -159,14 +159,20 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
 #define SENSOR_REPEAT           3    /* 每路连采几遍：让故障计数能在同一轮里攒满 */
 
 #define ADC_OVERSAMPLE             9    /* 9 次取中位数 */
-#define ADC_OPEN_RAW             100    /* 低于此值判为断线/短路到地 */
+/* 低于此值判为断线/短路到地。
+ * 原来是 100，实测六路都没接探头时悬空 ADC 会漂到 100~107，
+ * 刚好越过阈值被当成"正常读数"，再由 (dry-raw)/span 算出 100% 湿度，
+ * 看起来像两路浇透了、还能点浇水。HW-390 泡在水里最低也约 1000~1300，
+ * 取 400 既能挡住悬空噪声，又离最湿的真实读数留足余量。 */
+#define ADC_OPEN_RAW             400
 #define ADC_SHORT_RAW           4000    /* 高于此值判为短路到 3V3 */
 #define ADC_JUMP_RAW            1500    /* 单次跳变超过此值视为噪声，丢弃 */
-#define FAULT_CONFIRM_COUNT        3    /* 连续 3 次异常才判故障。
-                                           间歇供电下一轮每路只采 SENSOR_REPEAT 遍，
-                                           取 3 才能在同一轮里确认（约 900ms），
-                                           否则拔掉探头要等一整个周期才发现。
-                                           9 次中位数 + 20ms 间隔已足以滤掉偶发抖动。 */
+/* 断线/短路是明确的电气状态，一次异常即判故障。
+ * 原来是 3：一轮每路只采 SENSOR_REPEAT=3 遍，采样中途被打断时计数攒不满，
+ * 最后那一路就会以 flt=0 出现在网页和 MQTT 状态帧上，
+ * 看起来像"接线正常"、还能点浇水。解除故障仍需 FAULT_RECOVER_COUNT
+ * 次连续正常样本，所以不会因偶发抖动来回跳。 */
+#define FAULT_CONFIRM_COUNT        1
 #define FAULT_RECOVER_COUNT        3    /* 连续 3 次正常才解除故障 */
 #define STUCK_SAMPLES             60    /* 连续 60 次（约 30 秒）读数一字不差判为卡死。
                                            土湿几十秒内本就几乎不变，不能用"变化量小"判卡死，

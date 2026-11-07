@@ -119,7 +119,15 @@ static uint8_t rawToPct(uint8_t ch, uint16_t raw) {
 
 void sensorsRecomputePct(void) {
   for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
-    if (s_ready[i]) s_pct[i] = rawToPct(i, s_raw[i]);
+    /* 标定改了干/湿点后重算。断线通道的 s_raw 是 0，
+       拿它去算会得到 (dry-0)/span = 100%，等于"最湿"；
+       未接线时这一路反而会被当成浇透的土。故障/未就绪的一律保持 0。 */
+    if (!s_ready[i] || s_fault[i] != FLT_NONE ||
+        s_raw[i] < ADC_OPEN_RAW || s_raw[i] > ADC_SHORT_RAW) {
+      s_pct[i] = 0;
+      continue;
+    }
+    s_pct[i] = rawToPct(i, s_raw[i]);
   }
 }
 
@@ -385,11 +393,21 @@ uint16_t sensorsRaw(uint8_t ch) {
 }
 
 uint8_t sensorsPct(uint8_t ch) {
-  return (ch < CHANNEL_COUNT) ? s_pct[ch] : 0;
+  /* 故障或还没采过样的通道不许对外报湿度，避免自动浇水拿 0 当"干透了" */
+  if (ch >= CHANNEL_COUNT || !s_ready[ch] || s_fault[ch] != FLT_NONE) return 0;
+  return s_pct[ch];
 }
 
 uint8_t sensorsFault(uint8_t ch) {
-  return (ch < CHANNEL_COUNT) ? s_fault[ch] : (uint8_t)FLT_OPEN;
+  if (ch >= CHANNEL_COUNT) return (uint8_t)FLT_OPEN;
+  if (s_fault[ch] != FLT_NONE) return s_fault[ch];
+  /* 还没采到过任何样本：首轮尚未轮到、供电检测提前收工、或采样中途被打断。
+     此时 s_raw=0 / s_pct=0 / s_fault=FLT_NONE，若对外报"正常"，
+     网页会把没接线的那几路显示成可浇水的正常通道。
+     一律按断线输出，采到真实样本后由 sampleChannel 自动解除。
+     这里是 /api/state、MQTT 状态帧、pumpStart 闸门共用的唯一出口。 */
+  if (!s_ready[ch]) return (uint8_t)FLT_OPEN;
+  return (uint8_t)FLT_NONE;
 }
 
 bool sensorsReady(uint8_t ch) {
