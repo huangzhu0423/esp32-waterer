@@ -250,7 +250,7 @@ details.conf[open] summary:after{transform:rotate(90deg)}
 "use strict";
 var N=6, RING_C=2*Math.PI*26;
 var CH=[], TASKS=[], client=null, connected=false;
-var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null, devAvail=null;
+var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null, lastStateAt=0;
 var CFG_KEY='mqtt_dash_v2', TAB_KEY='mqtt_dash_tab';
 var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'c90294a7be154afb80b9d63900da8f4a',pass:'c90294a7be154afb80b9d63900da8f4a',token:'',sec:15};
 var cfg=DEF;
@@ -452,7 +452,7 @@ function onWater(i){
 
 /* ---------- 状态解析 ---------- */
 function applyState(s){
-  gotState=true; devAvail=true; clearTimeout(onlineTimer);
+  gotState=true; lastStateAt=Date.now(); clearTimeout(onlineTimer);
   $('#dAvail').textContent='在线';
   $('#devPanel') && ($('#devPanel').hidden=false);
   for(var i=0;i<N&&s.ch&&i<s.ch.length;i++){
@@ -506,19 +506,14 @@ function connect(){
   var opt={clientId:u||('dash_'+Math.random().toString(16).slice(2,10)),clean:true,reconnectPeriod:4000,connectTimeout:15000};
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
-  gotState=false; devAvail=null; clearTimeout(onlineTimer);
-  /* 状态上报周期最长 30 秒，6 秒就判离线会把在线设备误报成未上线 */
+  gotState=false; lastStateAt=0; clearTimeout(onlineTimer);
+  /* 状态周期最长 30 秒。avail 的 retain 可能是设备掉线后残留的 online，
+     不能拿它当在线证据，一律以是否收到状态帧为准。 */
   onlineTimer=setTimeout(function(){
     if(gotState) return;
-    if(devAvail===true){
-      $('#stripTxt').textContent='设备在线 · 等待状态上报';
-      $('#subline').textContent='6 路 · 等待状态上报';
-      $('#dAvail').textContent='在线';
-    }else{
-      $('#stripTxt').textContent='设备未上线 · 检查路由器与远程 MQTT';
-      $('#subline').textContent='6 路 · 设备未上线';
-      $('#dAvail').textContent='离线';
-    }
+    $('#stripTxt').textContent='设备未上线 · 检查路由器与远程 MQTT';
+    $('#subline').textContent='6 路 · 设备未上线';
+    $('#dAvail').textContent='离线';
   },35000);
   client=mqtt.connect(cfg.broker,opt);
   client.on('connect',function(){
@@ -533,16 +528,8 @@ function connect(){
   client.on('error',function(e){ $('#banner').classList.add('on'); $('#banner').textContent='连接错误：'+(e&&e.message?e.message:e); });
   client.on('message',function(topic,payload){
     if(topic===mqTopic('avail')){
-      var v=payload.toString();
-      devAvail=(v==='online');
-      $('#dAvail').textContent=devAvail?'在线':'离线';
-      if(devAvail && !gotState){
-        $('#stripTxt').textContent='设备在线 · 等待状态上报';
-        $('#subline').textContent='6 路 · 等待状态上报';
-      }else if(!devAvail){
-        $('#stripTxt').textContent='设备未上线 · 检查设备是否连上路由器';
-        $('#subline').textContent='6 路 · 设备未上线';
-      }
+      /* 只认 offline，且不覆盖已有的实时状态；online 可能是陈旧 retain */
+      if(payload.toString()!=='online' && !lastStateAt) $('#dAvail').textContent='离线';
       return;
     }
     try{
@@ -575,6 +562,13 @@ $('#grid').addEventListener('click',function(ev){
   var card=ev.target.closest('.card');
   if(card) openSheet(+card.dataset.i);
 });
+/* 曾在线但停止上报（断电 / 掉回 AP 热点）时，60 秒内自动标离线 */
+setInterval(function(){
+  if(!connected || !lastStateAt || Date.now()-lastStateAt<60000) return;
+  $('#dAvail').textContent='离线';
+  $('#subline').textContent='6 路 · 设备未上线';
+  $('#stripTxt').textContent='设备停止上报 · 检查供电与 WiFi';
+},10000);
 importHash();
 cfg=readCfg(); fillForm();
 
