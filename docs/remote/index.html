@@ -265,10 +265,10 @@ function connect(){
   if(client){ try{client.end(true);}catch(e){} }
   var url=$('#broker').value.trim();
   if(!url){ toast('先填 broker 地址'); return; }
-  prefix=($('#devid').value.trim()||'aw_xxxx').replace(/\/+$/,'');
+  prefix=($('#devid').value.trim()||'aw_xxxx').toUpperCase().replace(/\/+$/,'');
   token=$('#token').value.trim();
-  var opt={clientId:'dash_'+Math.random().toString(16).slice(2,10),clean:true,reconnectPeriod:4000,connectTimeout:8000};
   var u=$('#user').value.trim(), p=$('#pass').value;
+  var opt={clientId: u || ('dash_'+Math.random().toString(16).slice(2,10)),clean:true,reconnectPeriod:4000,connectTimeout:8000};
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
   client=mqtt.connect(url,opt);

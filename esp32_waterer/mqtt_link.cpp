@@ -167,7 +167,9 @@ static void attemptConnect(uint32_t nowMs) {
   s_mqtt.setServer(s_host, s_port);
 
   char cid[MQTT_BASE_MAX_LEN + 8];
-  snprintf(cid, sizeof(cid), "%s", s_base);
+  /* 巴法云按 clientId = uid 路由消息：user 字段填了 uid 就用作 clientId；
+     通用 broker（EMQX/自建）回落到主题前缀，避免空 clientId。 */
+  snprintf(cid, sizeof(cid), "%s", s_user[0] ? s_user : s_base);
 
   char avail[MQTT_BASE_MAX_LEN + 16];
   topicName(avail, sizeof(avail), "avail");
