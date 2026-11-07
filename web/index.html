@@ -299,19 +299,19 @@ function updateCard(i){
   val.style.strokeDashoffset = off.toFixed(1);
   val.style.stroke = c.fault ? '#d7dfe9' : (pct < c.thr ? '#e0a300' : '#2563eb');
   card.querySelector('.num .p').textContent = c.fault ? '--' : pct;
-  card.querySelector('.dt').textContent = c.fault ? 'raw '+c.raw+' · 断线' : 'raw '+c.raw;
+  card.querySelector('.dt').textContent = c.fault ? ('raw '+c.raw+' · '+(c.fault===5?'无供电':'断线')) : 'raw '+c.raw;
 
   var chip = card.querySelector('.chip');
   var run = active && active.ch === i;
   var queued = queue.some(function(q){ return q.ch === i; });
-  if(c.fault){ chip.className='chip err'; chip.textContent='故障'; }
+  if(c.fault){ chip.className='chip err'; chip.textContent = (c.fault===5?'供电':'故障'); }
   else if(run){ chip.className='chip auto'; chip.textContent = (active.src==='manual'?'手动':'自动'); }
   else if(queued){ chip.className='chip q'; chip.textContent='排队'; }
   else if(c.auto){ chip.className='chip auto'; chip.textContent='自动'; }
   else { chip.className='chip off'; chip.textContent='关闭'; }
 
   var btn = card.querySelector('.wbtn');
-  if(c.fault && !run){ btn.className='wbtn fault'; btn.textContent='传感器故障'; }
+  if(c.fault && !run){ btn.className='wbtn fault'; btn.textContent = (c.fault===5?'探头无供电':'传感器故障'); }
   else if(run){ btn.className='wbtn run'; btn.textContent='停止 '+active.remain+'s'; }
   else if(queued){ btn.className='wbtn wait'; btn.textContent='排队中'; }
   else { btn.className='wbtn'; btn.textContent='浇 '+c.maxSec+'s'; }

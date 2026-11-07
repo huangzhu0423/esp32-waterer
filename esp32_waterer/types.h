@@ -32,7 +32,10 @@ enum FaultCode : uint8_t {
   FLT_OPEN  = 1,    /* 断线 / 短路到地 */
   FLT_SHORT = 2,    /* 短路到 3V3 / 饱和 */
   FLT_STUCK = 3,    /* 读数卡死 */
-  FLT_NOISY = 4     /* 强噪声 */
+  FLT_NOISY = 4,    /* 强噪声 */
+  FLT_PWR   = 5     /* 探头供电异常：六路读数同时贴地，
+                       基本可以断定是供电继电器没吸合 / 线圈断，
+                       而不是六个探头一起坏。属于全局故障，会盖掉各路的原有状态。 */
 };
 
 /* ---------- 请求结果 ---------- */
@@ -66,6 +69,8 @@ enum LogCode : uint8_t {
   LOG_PUMP_BUDGET,
   LOG_FAULT,
   LOG_RECOVER,
+  LOG_PWR_FAIL,
+  LOG_PWR_OK,
   LOG_CALIB,
   LOG_CFG_SAVE,
   LOG_WIFI_STA,

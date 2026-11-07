@@ -58,6 +58,8 @@ const char* logText(uint8_t code) {
     case LOG_PUMP_BUDGET:     return "超出每小时累计上限";
     case LOG_FAULT:           return "传感器故障";
     case LOG_RECOVER:         return "传感器恢复正常";
+    case LOG_PWR_FAIL:        return "探头供电异常：六路均无读数，检查供电继电器";
+    case LOG_PWR_OK:          return "探头供电已恢复";
     case LOG_CALIB:           return "校准点已记录";
     case LOG_CFG_SAVE:        return "配置已保存";
     case LOG_WIFI_STA:        return "已连上路由器";
@@ -83,11 +85,13 @@ const char* logKind(uint8_t code) {
     case LOG_PUMP_PREEMPT:
     case LOG_PUMP_TIMEOUT:
     case LOG_FAULT:
+    case LOG_PWR_OK:
     case LOG_WIFI_AP:
     case LOG_TASK_SKIP:
     case LOG_CFG_BAD:
       return "warn";
     case LOG_PUMP_BUDGET:
+    case LOG_PWR_FAIL:
     case LOG_WIFI_FAIL:
     case LOG_LOCKOUT:
       return "err";

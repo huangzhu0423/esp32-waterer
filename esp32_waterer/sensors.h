@@ -17,6 +17,10 @@ void     sensorsRequestNow(void);
 /* 当前是否正处于上电采集窗口 */
 bool     sensorsSampling(void);
 
+/* 探头供电是否异常（六路读数同时贴地）。为 true 时各通道的 flt 都是 FLT_PWR，
+   表示供电没上去，而不是六个探头一起坏了。 */
+bool     sensorsPwrFault(void);
+
 /* 距下一轮采样还有多久（毫秒）；正在采或首轮未完成时返回 0 */
 uint32_t sensorsNextCycleMs(uint32_t nowMs);
 

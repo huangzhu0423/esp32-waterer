@@ -40,6 +40,7 @@ static uint8_t  s_readCh = 0;         /* 本轮正在采哪一路 */
 static uint8_t  s_repIdx = 0;         /* 该路已经采了几遍 */
 static bool     s_bootDone = false;   /* 首轮是否已完成：没采过就立刻采，不等 30 分钟 */
 static bool     s_reqNow = false;     /* 有人点名要立刻补采一轮 */
+static bool     s_pwrFault = false;   /* 探头供电异常（六路同时贴地），全局状态 */
 
 /* ============ 探头供电开关 ============ */
 static void sensorPowerOn(void) {
@@ -129,6 +130,35 @@ static void clearFault(uint8_t ch) {
   s_fault[ch] = FLT_NONE;
   logAdd(LOG_RECOVER, (int8_t)ch);
 }
+
+/* ============ 探头供电检测 ============
+ * 六路读数同时贴地，几乎不可能是六个探头约好了一起坏，
+ * 而是 VCC 根本没上来：继电器没吸合、线圈断、前级掉电。
+ * 这时若按每路断线去报，你会看到六个独立的"传感器故障"，
+ * 误以为探头全废，实际该查的是供电。 */
+static bool pwrAllDead(void) {
+  for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+    if (readMedian(i) >= ADC_OPEN_RAW) return false;   /* 有一路活着就说明供电正常 */
+  }
+  return true;
+}
+
+static void setPwrFault(bool on) {
+  if (s_pwrFault == on) return;
+  s_pwrFault = on;
+  /* 直接写 s_fault，不走 raiseFault：后者每路都会刷一条日志，
+     六路一起刷反而把"供电"这个根因埋掉了。 */
+  for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
+    if (on) {
+      s_fault[i] = FLT_PWR;                    /* 盖掉各路原有状态 */
+    } else if (s_fault[i] == FLT_PWR) {
+      s_fault[i] = FLT_NONE;                   /* 只清供电码，其它故障留给各自判定 */
+    }
+  }
+  logAdd(on ? LOG_PWR_FAIL : LOG_PWR_OK, -1);
+}
+
+bool sensorsPwrFault(void) { return s_pwrFault; }
 
 /* ============ 单路采样 + 质量判定 ============ */
 static void sampleChannel(uint8_t ch, uint32_t nowMs) {
@@ -286,8 +316,20 @@ void sensorsTick(uint32_t nowMs, bool pumpRecent) {
     case SP_SETTLE:
       /* 探头内部有稳压和滤波电容，刚上电的读数是漂的 */
       if ((uint32_t)(nowMs - s_pwrAtMs) >= SENSOR_SETTLE_MS) {
-        s_pwrAtMs = nowMs;
-        s_pwrState = SP_READING;
+        /* 上电确认：电要是没上去，再采 400ms 也只是六份垃圾，
+           还会把六路都判成断线。先探一下，死了就直接收工。 */
+        if (pwrAllDead()) {
+          setPwrFault(true);
+          sensorPowerOff();
+          s_pwrState = SP_IDLE;
+          s_lastCycleMs = nowMs;
+          s_bootDone = true;
+          s_reqNow = false;
+        } else {
+          setPwrFault(false);
+          s_pwrAtMs = nowMs;
+          s_pwrState = SP_READING;
+        }
       }
       break;
 
