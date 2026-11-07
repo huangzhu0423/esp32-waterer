@@ -88,13 +88,41 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
 #define CH_BUDGET_SEC_PER_HOUR    900   /* 每通道每小时累计上限 15 分钟 */
 #define GLOBAL_BUDGET_SEC_PER_HOUR 1800 /* 全局每小时累计上限 30 分钟 */
 
-/* ================= 采样 ================= */
+/* ================= 传感器采样 ================= */
 #define ADC_SAMPLE_INTERVAL_MS    500   /* 每路 500ms 采一次，6 路轮流 */
+
+/* ================= 探头间歇供电 =================
+ * 电容式探头长期通电会加速极板电化学腐蚀，6 路常供合计约 30mA，
+ * 电池/太阳能供电下这个值很要命。改成一路上电、采完立刻断电。
+ *
+ * ！硬件必须配合，否则这几行配置不起作用 ！
+ *   3V3 ──[P-MOS 源极] [漏极]── 传感器 VCC 母线
+ *                栅极 ── GPIO27
+ *                栅极 ── 10k ── 3V3（上拉，保证复位瞬间默认断开）
+ * GPIO 拉低 = 导通供电，拉高 = 断开。
+ * 必须用 P-MOS 高边开关（AO3401 / SI2301 之类）。
+ * 不能拿 N-MOS 断 GND：探头断电后 AOUT 仍会经内部电路带电压，
+ * 电流会从 ADC 引脚的 ESD 保护二极管倒灌进芯片，读数和寿命都完蛋。
+ *
+ * 注意 GPIO27 与 USE_MUX 的 PIN_MUX_S0 撞车，将来启用多路复用要换脚。 */
+#define PIN_SENSOR_PWR        27
+#define SENSOR_PWR_ON_LEVEL   LOW    /* P-MOS 栅极拉低才导通 */
+#define SENSOR_PWR_OFF_LEVEL  HIGH
+
+#define SENSOR_CYCLE_MS   1800000UL  /* 采集周期 30 分钟 */
+#define SENSOR_SETTLE_MS      500    /* 上电后等探头输出稳定（内部有滤波电容） */
+#define SENSOR_READ_GAP_MS     20    /* 相邻两次采样的间隔，给 ADC 采样电容充电 */
+#define SENSOR_REPEAT           3    /* 每路连采几遍：让故障计数能在同一轮里攒满 */
+
 #define ADC_OVERSAMPLE             9    /* 9 次取中位数 */
 #define ADC_OPEN_RAW             100    /* 低于此值判为断线/短路到地 */
 #define ADC_SHORT_RAW           4000    /* 高于此值判为短路到 3V3 */
 #define ADC_JUMP_RAW            1500    /* 单次跳变超过此值视为噪声，丢弃 */
-#define FAULT_CONFIRM_COUNT        5    /* 连续 5 次异常才判故障 */
+#define FAULT_CONFIRM_COUNT        3    /* 连续 3 次异常才判故障。
+                                           间歇供电下一轮每路只采 SENSOR_REPEAT 遍，
+                                           取 3 才能在同一轮里确认（约 900ms），
+                                           否则拔掉探头要等一整个周期才发现。
+                                           9 次中位数 + 20ms 间隔已足以滤掉偶发抖动。 */
 #define FAULT_RECOVER_COUNT        3    /* 连续 3 次正常才解除故障 */
 #define STUCK_SAMPLES             60    /* 连续 60 次（约 30 秒）读数一字不差判为卡死。
                                            土湿几十秒内本就几乎不变，不能用"变化量小"判卡死，
@@ -168,7 +196,12 @@ inline const char* cfgValidatePins() {
     for (uint8_t j = 0; j < CHANNEL_COUNT; j++) {
       if (i != j && PIN_PUMP[i] == PIN_PUMP[j]) return "水泵引脚重复";
       if (PIN_PUMP[i] == PIN_ADC[j]) return "水泵引脚与传感器引脚冲突";
+      if (PIN_PUMP[i] == PIN_SENSOR_PWR) return "水泵引脚与传感器供电脚冲突";
     }
+  }
+  if (cfgIsForbiddenOutput(PIN_SENSOR_PWR)) return "传感器供电引脚是禁用输出引脚";
+  for (uint8_t j = 0; j < CHANNEL_COUNT; j++) {
+    if (PIN_SENSOR_PWR == PIN_ADC[j]) return "传感器供电脚与传感器引脚冲突";
   }
   return nullptr;
 }

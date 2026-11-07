@@ -10,6 +10,16 @@
 void     sensorsBegin(void);
 void     sensorsTick(uint32_t nowMs, bool pumpRecent);
 
+/* 请求立刻补采一轮。浇水结束后用：土湿已经变了，
+   等下一个 30 分钟周期才更新的话，期间的自动判断都拿着旧读数。 */
+void     sensorsRequestNow(void);
+
+/* 当前是否正处于上电采集窗口 */
+bool     sensorsSampling(void);
+
+/* 距下一轮采样还有多久（毫秒）；正在采或首轮未完成时返回 0 */
+uint32_t sensorsNextCycleMs(uint32_t nowMs);
+
 uint16_t sensorsRaw(uint8_t ch);
 uint8_t  sensorsPct(uint8_t ch);
 uint8_t  sensorsFault(uint8_t ch);

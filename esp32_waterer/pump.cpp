@@ -148,6 +148,11 @@ void pumpStop(uint8_t reason) {
     default: break;
   }
   s_src = SRC_NONE;
+
+  /* 土刚被浇过，湿度已经变了。请求尽快补采一轮，
+     否则自动逻辑会拿着"浇水前"的旧读数继续判断，可能马上浇第二次。
+     sensorsRequestNow 内部有 60 秒节流，连续浇水不会反复开采样。 */
+  sensorsRequestNow();
 }
 
 void pumpTick(uint32_t nowMs) {

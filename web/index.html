@@ -194,6 +194,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
       <div class="row"><span class="grow">信号强度</span><b id="dRssi">—</b></div>
       <div class="row"><span class="grow">可用内存</span><b id="dHeap">—</b></div>
       <div class="row"><span class="grow">运行时长</span><b id="dUp">—</b></div>
+      <div class="row"><span class="grow">下次采集</span><b id="dNext">—</b></div>
       <div class="row"><span class="grow">固件版本</span><b id="dVer">—</b></div>
     </div>
     <div class="hint">连不上路由器时板子会自动开热点，手机连 <b>AutoWater</b> 开头的 WiFi 就能打开本页。热点模式下没有外网，属于正常。</div>
@@ -640,6 +641,12 @@ function applyState(s){
   $('#dRssi').textContent = s.rssi ? s.rssi+' dBm' : '—';
   $('#dHeap').textContent = s.heap ? Math.round(s.heap/1024)+' KB' : '—';
   $('#dUp').textContent = hhmmss(s.up||0);
+  var nx = $('#dNext');
+  if(nx){
+    if(s.samp) nx.textContent = '采集中';
+    else if(s.next != null) nx.textContent = Math.floor(s.next/60) + ' 分 ' + pad2(s.next%60) + ' 秒后';
+    else nx.textContent = '即将开始';
+  }
   renderChannels();
 }
 

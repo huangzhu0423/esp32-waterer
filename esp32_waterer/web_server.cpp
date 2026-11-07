@@ -131,7 +131,7 @@ static void handleState(void) {
 
   n = app(b, n, sizeof(b),
           "{\"ok\":1,\"fw\":\"%s\",\"up\":%lu,\"heap\":%lu,\"mode\":\"%s\",\"ip\":\"%s\","
-          "\"rssi\":%d,\"timeOk\":%d,\"q\":%d,\"lock\":%lu,",
+          "\"rssi\":%d,\"timeOk\":%d,\"q\":%d,\"lock\":%lu,\"samp\":%d,\"next\":%lu,",
           FW_VERSION,
           (unsigned long)(nowMs / 1000UL),
           (unsigned long)ESP.getFreeHeap(),
@@ -140,7 +140,9 @@ static void handleState(void) {
           netRssi(),
           netTimeSynced() ? 1 : 0,
           (int)schedQueueLen(),
-          (unsigned long)healthLockRemainSec(nowMs));
+          (unsigned long)healthLockRemainSec(nowMs),
+          sensorsSampling() ? 1 : 0,
+          (unsigned long)(sensorsNextCycleMs(nowMs) / 1000UL));
 
   if (pumpIsActive()) {
     uint8_t src = pumpActiveSrc();

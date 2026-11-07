@@ -22,8 +22,49 @@ static uint8_t  s_noiseCnt[CHANNEL_COUNT];   /* 最近一分钟丢弃数 */
 static uint32_t s_noiseWinMs[CHANNEL_COUNT];
 static uint8_t  s_sameCnt[CHANNEL_COUNT];    /* 连续完全相同的读数，用于卡死判定 */
 
-static uint8_t  s_rr = 0;                    /* 轮询游标 */
+static uint8_t  s_rr = 0;                    /* 轮询游标（立即采样时用） */
 static uint16_t s_lastGood[CHANNEL_COUNT];   /* 0xFFFF = 还没有有效读数 */
+
+/* ---------- 探头供电周期状态机 ----------
+ * IDLE    断电待机，等下一个 30 分钟周期
+ * SETTLE  刚上电，等探头输出稳定
+ * READING 正在逐路采样，采完立刻断电
+ */
+enum : uint8_t { SP_IDLE = 0, SP_SETTLE, SP_READING };
+
+static uint8_t  s_pwrState = SP_IDLE;
+static uint32_t s_pwrAtMs = 0;        /* 进入当前状态的时刻 */
+static uint32_t s_pwrOnAtMs = 0;      /* 本次上电时刻，0 = 当前断电 */
+static uint32_t s_lastCycleMs = 0;    /* 上一轮采完的时刻 */
+static uint8_t  s_readCh = 0;         /* 本轮正在采哪一路 */
+static uint8_t  s_repIdx = 0;         /* 该路已经采了几遍 */
+static bool     s_bootDone = false;   /* 首轮是否已完成：没采过就立刻采，不等 30 分钟 */
+static bool     s_reqNow = false;     /* 有人点名要立刻补采一轮 */
+
+/* ============ 探头供电开关 ============ */
+static void sensorPowerOn(void) {
+  /* 先定电平再切输出：pinMode 会立刻让引脚按输出寄存器当前值驱动，
+     顺序反了会先输出旧电平再纠正，产生一个窄毛刺。 */
+  digitalWrite(PIN_SENSOR_PWR, SENSOR_PWR_ON_LEVEL);
+  pinMode(PIN_SENSOR_PWR, OUTPUT);
+  digitalWrite(PIN_SENSOR_PWR, SENSOR_PWR_ON_LEVEL);
+  s_pwrOnAtMs = millis();
+}
+
+static void sensorPowerOff(void) {
+  digitalWrite(PIN_SENSOR_PWR, SENSOR_PWR_OFF_LEVEL);
+  pinMode(PIN_SENSOR_PWR, OUTPUT);
+  digitalWrite(PIN_SENSOR_PWR, SENSOR_PWR_OFF_LEVEL);
+  s_pwrOnAtMs = 0;
+}
+
+/* 等探头输出稳定。已经稳了就直接返回 ——
+   一键标定要连读 6 路，每路都干等 500ms 会卡三秒。 */
+static void sensorWaitStable(void) {
+  if (s_pwrOnAtMs == 0) return;
+  uint32_t el = (uint32_t)(millis() - s_pwrOnAtMs);
+  if (el < SENSOR_SETTLE_MS) delay(SENSOR_SETTLE_MS - el);
+}
 
 /* ============ 底层读取（将来换 CD74HC4067 只改这里） ============ */
 static uint16_t sensorsReadRaw(uint8_t ch) {
@@ -93,7 +134,38 @@ static void clearFault(uint8_t ch) {
 static void sampleChannel(uint8_t ch, uint32_t nowMs) {
   uint16_t raw = readMedian(ch);
 
-  /* ---- 1. 单次跳变过滤 ----
+  /* ---- 1. 断线 / 短路（必须最优先）----
+   * 0 和满量程是明确的电气状态，不该先去过抖：间歇供电下一轮每路只采 3 遍，
+   * 若排在被跳变过滤后面，探头拔掉要等好几个周期才认得出，
+   * 而这段时间 pct 已经是 0，自动浇水会以为土干而盲目开泵。
+   * 100k 泄放电阻保证探头拔掉时读数落到 0 附近，
+   * 因此 raw ≈ 0 能和"干土"区分开（干土在 2800~3300）。 */
+  if (raw < ADC_OPEN_RAW) {
+    s_raw[ch] = raw;
+    s_ready[ch] = true;
+    s_pct[ch] = 0;
+    s_goodCnt[ch] = 0;
+    s_sameCnt[ch] = 0;
+    s_rejStreak[ch] = 0;
+    s_lastGood[ch] = 0xFFFF;              /* 作废基准，恢复后不做跳变比对 */
+    if (s_badCnt[ch] < 255) s_badCnt[ch]++;
+    if (s_badCnt[ch] >= FAULT_CONFIRM_COUNT) raiseFault(ch, FLT_OPEN);
+    return;
+  }
+  if (raw > ADC_SHORT_RAW) {
+    s_raw[ch] = raw;
+    s_ready[ch] = true;
+    s_pct[ch] = 0;
+    s_goodCnt[ch] = 0;
+    s_sameCnt[ch] = 0;
+    s_rejStreak[ch] = 0;
+    s_lastGood[ch] = 0xFFFF;
+    if (s_badCnt[ch] < 255) s_badCnt[ch]++;
+    if (s_badCnt[ch] >= FAULT_CONFIRM_COUNT) raiseFault(ch, FLT_SHORT);
+    return;
+  }
+
+  /* ---- 2. 单次跳变过滤 ----
    * 连续 3 次都超阈值说明不是噪声而是真实变化（比如探头被拔出又插回），
    * 此时必须重新同步，否则会永远拒绝下去、通道假死在旧值上。 */
   if (s_lastGood[ch] != 0xFFFF) {
@@ -118,32 +190,6 @@ static void sampleChannel(uint8_t ch, uint32_t nowMs) {
     } else {
       s_rejStreak[ch] = 0;
     }
-  }
-
-  /* ---- 2. 断线 / 短路 ----
-   * 100k 泄放电阻保证探头拔掉时读数落到 0 附近，
-   * 因此 raw ≈ 0 可以和"干土"区分开（干土在 2800~3300）。 */
-  if (raw < ADC_OPEN_RAW) {
-    s_raw[ch] = raw;
-    s_ready[ch] = true;
-    s_pct[ch] = 0;
-    s_goodCnt[ch] = 0;
-    s_sameCnt[ch] = 0;
-    if (s_badCnt[ch] < 255) s_badCnt[ch]++;
-    if (s_badCnt[ch] >= FAULT_CONFIRM_COUNT) raiseFault(ch, FLT_OPEN);
-    s_lastGood[ch] = raw;
-    return;
-  }
-  if (raw > ADC_SHORT_RAW) {
-    s_raw[ch] = raw;
-    s_ready[ch] = true;
-    s_pct[ch] = 0;
-    s_goodCnt[ch] = 0;
-    s_sameCnt[ch] = 0;
-    if (s_badCnt[ch] < 255) s_badCnt[ch]++;
-    if (s_badCnt[ch] >= FAULT_CONFIRM_COUNT) raiseFault(ch, FLT_SHORT);
-    s_lastGood[ch] = raw;
-    return;
   }
 
   /* ---- 3. 卡死判定 ----
@@ -183,6 +229,16 @@ void sensorsBegin(void) {
      analogSetAttenuation()，避免 ADC_11db / ADC_ATTEN_DB_12
      在 core 2.x 与 3.x 上的命名差异导致编译失败。 */
 
+  /* 探头先断电：上电第一件事就是断，避免传感器带着电进入初始化 */
+  sensorPowerOff();
+  s_pwrState = SP_IDLE;
+  s_pwrAtMs = 0;
+  s_lastCycleMs = 0;
+  s_readCh = 0;
+  s_repIdx = 0;
+  s_bootDone = false;
+  s_reqNow = false;
+
   for (uint8_t i = 0; i < CHANNEL_COUNT; i++) {
     pinMode(PIN_ADC[i], INPUT);       /* 36/39/34/35 是 input-only，这行只为语义清晰 */
     s_raw[i] = 0;
@@ -202,24 +258,78 @@ void sensorsBegin(void) {
 }
 
 void sensorsForceSample(uint8_t ch) {
-  if (ch >= CHANNEL_COUNT) return;
-  s_lastSampleMs[ch] = millis();
-  sampleChannel(ch, millis());
+  /* 间歇供电下探头平时不带电，直接读只会得到 0，
+     反而会把通道误判成断线、顺手锁死水泵。
+     所以这里不立即读，只登记一次"尽快补采"的请求。 */
+  (void)ch;
+  sensorsRequestNow();
 }
 
 void sensorsTick(uint32_t nowMs, bool pumpRecent) {
-  /* 泵启停后的地弹窗口内不采样，否则会产生假跳变 */
+  /* 泵启停后的地弹窗口内什么都不做：不但不能采样，也不能在这时候上电，
+     否则这一轮读数全是脏的，还会污染后续的故障判定。 */
   if (pumpRecent) return;
 
-  for (uint8_t k = 0; k < CHANNEL_COUNT; k++) {
-    uint8_t ch = (uint8_t)((s_rr + k) % CHANNEL_COUNT);
-    if (nowMs - s_lastSampleMs[ch] >= ADC_SAMPLE_INTERVAL_MS) {
-      s_lastSampleMs[ch] = nowMs;
-      s_rr = (uint8_t)((ch + 1) % CHANNEL_COUNT);
-      sampleChannel(ch, nowMs);
-      return;                        /* 一次 tick 只采一路，避免占用 loop 太久 */
-    }
+  switch (s_pwrState) {
+    case SP_IDLE:
+      /* 首轮、到周期、或被点名补采，就开一轮 */
+      if (!s_bootDone || s_reqNow ||
+          (uint32_t)(nowMs - s_lastCycleMs) >= SENSOR_CYCLE_MS) {
+        sensorPowerOn();
+        s_pwrAtMs = nowMs;
+        s_readCh = 0;
+        s_repIdx = 0;
+        s_pwrState = SP_SETTLE;
+      }
+      break;
+
+    case SP_SETTLE:
+      /* 探头内部有稳压和滤波电容，刚上电的读数是漂的 */
+      if ((uint32_t)(nowMs - s_pwrAtMs) >= SENSOR_SETTLE_MS) {
+        s_pwrAtMs = nowMs;
+        s_pwrState = SP_READING;
+      }
+      break;
+
+    case SP_READING:
+      if ((uint32_t)(nowMs - s_pwrAtMs) >= SENSOR_READ_GAP_MS) {
+        s_pwrAtMs = nowMs;
+        sampleChannel(s_readCh, nowMs);
+
+        if (++s_repIdx >= SENSOR_REPEAT) {
+          s_repIdx = 0;
+          if (++s_readCh >= CHANNEL_COUNT) {
+            /* 六路采完立刻断电：带电时间越短，极板电化学腐蚀越慢。
+               一轮实际带电约 500 + 6×3×20 = 860ms，占 30 分钟周期的 0.05%。 */
+            sensorPowerOff();
+            s_pwrState = SP_IDLE;
+            s_lastCycleMs = nowMs;
+            s_bootDone = true;
+            s_reqNow = false;
+          }
+        }
+      }
+      break;
   }
+}
+
+/* 请求立刻补采一轮。浇水结束后用：土湿已经变了，30 分钟后才知道太迟，
+   中间自动逻辑会拿着"浇水前"的旧读数继续判断。 */
+void sensorsRequestNow(void) {
+  /* 离上一轮太近就别重复开：一轮本身要耗约 860ms 的电，
+     频繁手动浇水时每次停泵都补采，省电的意义就没了。 */
+  if (s_bootDone && (uint32_t)(millis() - s_lastCycleMs) < 60000UL) return;
+  s_reqNow = true;
+}
+
+bool sensorsSampling(void) {
+  return s_pwrState != SP_IDLE;
+}
+
+uint32_t sensorsNextCycleMs(uint32_t nowMs) {
+  if (s_pwrState != SP_IDLE || !s_bootDone) return 0;
+  uint32_t el = (uint32_t)(nowMs - s_lastCycleMs);
+  return (el >= SENSOR_CYCLE_MS) ? 0 : (SENSOR_CYCLE_MS - el);
 }
 
 uint16_t sensorsRaw(uint8_t ch) {
@@ -247,6 +357,13 @@ uint16_t sensorsCalibProbe(uint8_t ch, uint8_t* st) {
   if (st) *st = FLT_OPEN;
   if (ch >= CHANNEL_COUNT) return 0;
 
+  /* 标定要的是"此刻的真实读数"。间歇供电下探头平时是断电的，
+     直接读只会拿到 0，所以这里自己把电加上、等稳了再采，
+     采完恢复原来的供电状态。会阻塞约 500ms，但标定是用户主动点的，可以接受。 */
+  bool wasOn = (s_pwrState != SP_IDLE);
+  if (!wasOn) sensorPowerOn();
+  sensorWaitStable();
+
   /* 单次 9 采样容易被 WiFi 发射尖峰带偏，标定要写进 NVS、以后一直用，
      所以多采两组再取一次中位数，共 27 次 ADC。 */
   uint16_t v[3];
@@ -254,6 +371,10 @@ uint16_t sensorsCalibProbe(uint8_t ch, uint8_t* st) {
     v[i] = readMedian(ch);
     if (i < 2) delay(20);
   }
+
+  /* 数据已经拿到，先断电再走后面的判断：
+     下面有三个 return 分支，放到后面断电会漏掉 */
+  if (!wasOn) sensorPowerOff();
 
   uint16_t a = v[0], b = v[1], c = v[2], t;
   if (a > b) { t = a; a = b; b = t; }
