@@ -39,6 +39,7 @@ body{background:#f4f6fa;color:#16202e;font:15px/1.45 system-ui,-apple-system,"Se
 .pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
 .pill.off{background:#ffeced;color:#e5484d}
 .pill.ok{background:#e6f7f1;color:#0F6E56}
+.pill.wait{background:#fff4e0;color:#a35c00}
 .sub{font-size:12px;color:#7b8899;margin:3px 0 14px}
 .banner{display:none;background:#ffeced;color:#c22c30;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:10px;margin-bottom:12px}
 .banner.on{display:block}
@@ -73,6 +74,9 @@ body{background:#f4f6fa;color:#16202e;font:15px/1.45 system-ui,-apple-system,"Se
 .wbtn:active{transform:scale(.97)}
 .wbtn.run{background:#e5484d}
 .wbtn.dis,.wbtn:disabled{background:#e8edf3;color:#9aa7b6;cursor:not-allowed}
+.card.locked{opacity:.55;filter:grayscale(.9)}
+.card.locked .wbtn,.card.locked .wbtn.run{background:#e8edf3;color:#9aa7b6;cursor:not-allowed}
+.card.locked .sw,.card.locked .gear{opacity:.65;cursor:not-allowed}
 .panel{background:#fff;border:1px solid #e6ebf2;border-radius:14px;padding:4px 14px;margin-bottom:12px}
 .row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid #f1f4f9;font-size:13.5px}
 .row:last-child{border-bottom:0}
@@ -96,7 +100,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;heigh
 .btn.ghost{background:#f0f4fa;color:#5b6b80}
 .btn.danger{background:#ffeced;color:#c22c30}
 .btn.sm{padding:7px 12px;font-size:12px}
-.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn:disabled,select:disabled{opacity:.5;cursor:not-allowed}
 .log{font-size:12.5px;padding:9px 0;border-bottom:1px solid #f1f4f9;display:flex;gap:9px;align-items:flex-start}
 .log:last-child{border-bottom:0}
 .log .t{color:#b3bec9;font-variant-numeric:tabular-nums;flex:none}
@@ -253,6 +257,7 @@ var N=6, RING_C=2*Math.PI*26;
 var CH=[], TASKS=[], LOGS=[], client=null, connected=false;
 var prefix='', token='', bemfa=false, curTab='ch', sheetCh=-1, editIdx=-1, gotState=false, onlineTimer=null, lastStateAt=0;
 var lastUp=0, lastNext=0, bootWallMs=0, activeCh=-1, activeRemain=0, activeAt=0, draft=null, lastPumpAbsMs=0;
+var lastLive=null;
 var CFG_KEY='mqtt_dash_v2', TAB_KEY='mqtt_dash_tab';
 var DEF={broker:'wss://bemfa.com:9504/wss',devid:'aw_AF48',user:'c90294a7be154afb80b9d63900da8f4a',pass:'c90294a7be154afb80b9d63900da8f4a',token:''};
 var cfg=DEF;
@@ -268,6 +273,7 @@ function ago(sec){ if(sec<60) return sec+' 秒前'; if(sec<3600) return Math.flo
 function fmtGap(sec){ sec=Math.max(0,+sec||0); if(sec<60) return sec+' 秒'; if(sec<3600) return Math.floor(sec/60)+' 分 '+pad2(sec%60)+' 秒'; return Math.floor(sec/3600)+' 小时 '+pad2(Math.floor(sec%3600/60))+' 分'; }
 /* 状态帧 30 秒才来一次，本地每秒递推：在线时长 / 下次采集 / 最近更新 / 浇水倒计时 */
 function tick(){
+  syncLive();
   $('#dNow').textContent=bjTime();
   if(!lastStateAt){
     $('#dSeen').textContent='— · 等待上报';
@@ -367,9 +373,9 @@ function buildGrid(){
     var dt=el('div','dt','raw —');
     var wbtn=el('button','wbtn','浇水'); wbtn.dataset.i=i; wbtn.addEventListener('click',function(){ onWater(+this.dataset.i); });
     var stopbtn=el('button','wbtn run','停止'); stopbtn.dataset.i=i; stopbtn.hidden=true;
-    stopbtn.addEventListener('click',function(){ send({a:'stop',ch:+this.dataset.i}); toast('已发送停止'); });
+    stopbtn.addEventListener('click',function(){ if(send({a:'stop',ch:+this.dataset.i})) toast('已发送停止'); });
     var autoL=el('label','sw'); var cb=el('input'); cb.type='checkbox'; cb.dataset.i=i;
-    cb.addEventListener('change',function(){ send({a:'auto',ch:+this.dataset.i,on:this.checked?1:0}); });
+    cb.addEventListener('change',function(){ if(!send({a:'auto',ch:+this.dataset.i,on:this.checked?1:0})) this.checked=!this.checked; });
     autoL.appendChild(cb); autoL.appendChild(el('i'));
     var chiprow=el('div','chiprow'); var al=el('span','',null); al.style.cssText='font-size:11px;color:#5b6b80'; al.textContent='自动';
     chiprow.appendChild(autoL); chiprow.appendChild(al);
@@ -380,33 +386,44 @@ function buildGrid(){
 }
 function updateCard(i){
   var c=CH[i], card=$('#grid').children[i]; if(!card) return;
-  var off=RING_C*(1-(c.seen?c.pct:0)/100);
+  var locked=!devLive();
+  var off=locked?RING_C:RING_C*(1-(c.seen?c.pct:0)/100);
   var val=card.querySelector('.val'); val.style.strokeDashoffset=off.toFixed(1);
-  val.style.stroke=(c.flt||!c.seen)?'#d7dfe9':(c.pct<30?'#e0a300':'#2563eb');
-  card.querySelector('.num .p').textContent=(c.flt||!c.seen)?'--':c.pct;
+  val.style.stroke=(locked||c.flt||!c.seen)?'#d7dfe9':(c.pct<30?'#e0a300':'#2563eb');
+  card.querySelector('.num .p').textContent=(locked||c.flt||!c.seen)?'--':c.pct;
   card.querySelector('.nm').textContent=c.name||('通道 '+(i+1));
-  card.querySelector('.dt').textContent=!c.seen?'raw —':(c.flt?('raw '+c.raw+' · '+(c.flt===5?'无供电':'断线')):'raw '+c.raw);
+  card.querySelector('.dt').textContent=locked?'等待设备上报':(!c.seen?'raw —':(c.flt?('raw '+c.raw+' · '+(c.flt===5?'无供电':'断线')):'raw '+c.raw));
   var chip=card.querySelector('.chip');
-  if(!c.seen){ chip.className='chip off'; chip.textContent='等待'; }
+  if(locked){ chip.className='chip off'; chip.textContent='等待'; }
+  else if(!c.seen){ chip.className='chip off'; chip.textContent='等待'; }
   else if(c.flt){ chip.className='chip err'; chip.textContent=(c.flt===5?'供电':'故障'); }
   else if(c.run){ chip.className='chip'; chip.textContent='浇水'; }
   else if(c.auto){ chip.className='chip'; chip.textContent='自动'; }
   else { chip.className='chip off'; chip.textContent='关闭'; }
   var wbtn=card.querySelector('.wbtn'), stop=card.querySelector('.wbtn.run');
+  var auto=card.querySelector('.sw input'), gear=card.querySelector('.gear');
   if(c.run){ wbtn.hidden=true; stop.hidden=false; } else { wbtn.hidden=false; stop.hidden=true; }
   if(c.flt && !c.run){
     wbtn.disabled=true; wbtn.textContent='传感器故障'; wbtn.classList.add('dis');
   }else{
     wbtn.disabled=false; wbtn.textContent='浇水'; wbtn.classList.remove('dis');
   }
-  card.querySelector('.sw input').checked=!!c.auto;
-  card.className='card'+(c.run?' run':'')+(c.flt?' fault':'');
+  /* 没收到状态帧、或超过 60 秒没有新帧：整卡灰掉，所有控件都不允许操作 */
+  if(locked){
+    wbtn.disabled=true; stop.disabled=true; auto.disabled=true; gear.disabled=true;
+    wbtn.textContent='等待设备'; wbtn.classList.add('dis');
+  }else{
+    stop.disabled=false; auto.disabled=false; gear.disabled=false;
+  }
+  auto.checked=!!c.auto;
+  card.className='card'+(c.run?' run':'')+(c.flt?' fault':'')+(locked?' locked':'');
 }
 function renderAll(){ for(var i=0;i<N;i++) updateCard(i); }
 function chName(i){ return CH[i] && CH[i].name ? CH[i].name : ('通道 '+(i+1)); }
 
 /* ---------- 通道详情弹层：先编辑草稿，点保存才下发 ---------- */
 function openSheet(i){
+  if(!devLive()){ toast('等待设备上报中，暂不可操作'); return; }
   sheetCh=i; var c=CH[i], b=$('#sheetBody'); b.innerHTML='';
   draft={name:c.name||'',auto:!!c.auto,thr:c.thr||30,maxSec:c.maxSec||15};
   var h=el('h2');
@@ -433,8 +450,8 @@ function openSheet(i){
   $('#sSec').addEventListener('input',function(){ draft.maxSec=+this.value; $('#sSecV').textContent=this.value+'s'; $('#sWater').textContent='立即浇 '+this.value+' 秒'; });
   $('#sClose').addEventListener('click',closeSheet);
   $('#sSave').addEventListener('click',saveSheet);
-  $('#sCalDry').addEventListener('click',function(){ send({a:'cal',ch:i,wet:0}); toast('干点已记录'); });
-  $('#sCalWet').addEventListener('click',function(){ send({a:'cal',ch:i,wet:1}); toast('湿点已记录'); });
+  $('#sCalDry').addEventListener('click',function(){ if(send({a:'cal',ch:i,wet:0})) toast('干点已记录'); });
+  $('#sCalWet').addEventListener('click',function(){ if(send({a:'cal',ch:i,wet:1})) toast('湿点已记录'); });
   if(c.flt){ var bw=$('#sWater'); bw.disabled=true; bw.textContent='传感器故障，禁止浇水'; bw.classList.add('dis'); }
   $('#sWater').addEventListener('click',function(){ onWater(i,draft.maxSec); });
   $('#mask').classList.add('on'); $('#sheet').classList.add('on');
@@ -462,9 +479,10 @@ function renderTasks(){
     var tx=el('div','tx');
     var desc=t.type? ('每天 '+pad2(t.hour)+':'+pad2(t.min)+' · '+t.durSec+' 秒') : ('每 '+Math.round(t.periodMin/60*10)/10+' 小时 · '+t.durSec+' 秒');
     tx.innerHTML='<b>'+esc(chName(t.ch))+'</b><div class="sm2">'+esc(desc)+' · '+(t.on?'已启用':'已停用')+'</div>';
-    var del=el('button','btn ghost sm','删除'); del.addEventListener('click',function(){ send({a:'taskdel',i:t.i}); toast('已删除'); });
-    var sw=el('label','sw'); var cb=el('input'); cb.type='checkbox'; cb.checked=!!t.on;
-    cb.addEventListener('change',function(){ send({a:'task',i:t.i,on:this.checked?1:0}); });
+    var del=el('button','btn ghost sm','删除'); del.disabled=!devLive();
+    del.addEventListener('click',function(){ if(send({a:'taskdel',i:t.i})) toast('已删除'); });
+    var sw=el('label','sw'); var cb=el('input'); cb.type='checkbox'; cb.checked=!!t.on; cb.disabled=!devLive();
+    cb.addEventListener('change',function(){ if(!send({a:'task',i:t.i,on:this.checked?1:0})) this.checked=!this.checked; });
     sw.appendChild(cb); sw.appendChild(el('i'));
     var edit=el('button','btn ghost sm','编辑'); edit.addEventListener('click',function(){ loadTaskForm(t); });
     row.appendChild(tx); row.appendChild(edit); row.appendChild(sw); row.appendChild(del);
@@ -532,6 +550,9 @@ function renderLogs(items){
 /* ---------- 指令 ---------- */
 function send(o){
   if(!connected||!client){ toast('尚未连接'); return false; }
+  /* 等待设备上报时只允许查询（get）。连接建立后正是靠 get 拉首帧状态，
+     若把它一起挡掉会死锁；其余控制指令一律不发，避免「点了没反应」。 */
+  if(!devLive() && o.a!=='get'){ toast('等待设备上报中，暂不可操作'); return false; }
   o.t=token;
   client.publish(mqTopic('cmd'),JSON.stringify(o),{qos:0,retain:false});
   return true;
@@ -574,15 +595,38 @@ function applyState(s){
   activeRemain=s.active?(+s.active.remain||0):0; activeAt=Date.now();
   tick();
   if(s.cyc) $('#cycSel').value=String(s.cyc);
-  renderAll(); chOptions();
+  renderAll(); chOptions(); syncLive();   /* 首帧到达：解锁卡片并切到「已连接」 */
 }
 
 /* ---------- 连接 ---------- */
-function setConn(state,txt){
+/* 连上 broker 不等于设备可用：只有持续收到真实状态帧才算在线 */
+function devLive(){
+  return !!(connected && gotState && lastStateAt && (Date.now()-lastStateAt)<60000);
+}
+function dropLive(){
+  gotState=false; lastStateAt=0; lastLive=null; renderAll();
+}
+function lockControls(live){
+  ['#sample','#reboot','#calDry','#calWet','#cycSel','#tAdd'].forEach(function(sel){
+    var e=$(sel); if(e) e.disabled=!live;
+  });
+  renderTasks();                       /* 定时列表里的删除/启停跟着一起置灰 */
+}
+function syncLive(){
+  var live=devLive();
+  if(live===lastLive) return;
+  lastLive=live;
+  if(connected) setConn(true, live?'已连接':'等待设备上报中', live?'ok':'wait');
+  lockControls(live);
+  renderAll();
+  if(!live && sheetCh>=0) closeSheet();
+}
+function setConn(state,txt,mode){
   connected=state;
-  $('#conn').className='pill '+(state?'ok':'off');
-  $('#connT').textContent=txt||(state?'已连接':'未连接');
-  $('#dConn').textContent=txt||(state?'已连接':'未连接');
+  var t=txt||(state?'已连接':'未连接');
+  $('#conn').className='pill '+(mode||(state?'ok':'off'));
+  $('#connT').textContent=t;
+  $('#dConn').textContent=t;
   $('#banner').classList.remove('on');
 }
 function connect(){
@@ -604,7 +648,8 @@ function connect(){
   var opt={clientId:u||('dash_'+Math.random().toString(16).slice(2,10)),clean:true,reconnectPeriod:4000,connectTimeout:15000};
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
-  gotState=false; lastStateAt=0; bootWallMs=0; LOGS=[]; activeCh=-1; clearTimeout(onlineTimer);
+  gotState=false; lastStateAt=0; bootWallMs=0; LOGS=[]; activeCh=-1; lastLive=null;
+  clearTimeout(onlineTimer); renderAll();
   /* 状态周期最长 30 秒。avail 的 retain 可能是设备掉线后残留的 online，
      不能拿它当在线证据，一律以是否收到状态帧为准。 */
   onlineTimer=setTimeout(function(){
@@ -615,14 +660,15 @@ function connect(){
   },35000);
   client=mqtt.connect(cfg.broker,opt);
   client.on('connect',function(){
-    setConn(true);
+    setConn(true,'等待设备上报中','wait');
+    syncLive();                       /* 此时还没有状态帧，卡片保持灰锁 */
     client.subscribe(mqTopic('state'),{qos:0});
     client.subscribe(mqTopic('avail'),{qos:0});
     send({a:'get',w:'all'});
   });
-  client.on('reconnect',function(){ setConn(false,'重连中…'); });
-  client.on('close',function(){ setConn(false,'已断开'); });
-  client.on('offline',function(){ setConn(false,'离线'); });
+  client.on('reconnect',function(){ setConn(false,'重连中…'); dropLive(); });
+  client.on('close',function(){ setConn(false,'已断开'); dropLive(); });
+  client.on('offline',function(){ setConn(false,'离线'); dropLive(); });
   client.on('error',function(e){ $('#banner').classList.add('on'); $('#banner').textContent='连接错误：'+(e&&e.message?e.message:e); });
   client.on('message',function(topic,payload){
     if(topic===mqTopic('avail')){
@@ -661,7 +707,7 @@ $('#grid').addEventListener('click',function(ev){
   if(!ev.target || !ev.target.closest) return;
   if(ev.target.closest('button,label,input')) return;
   var card=ev.target.closest('.card');
-  if(card) openSheet(+card.dataset.i);
+  if(card && !card.classList.contains('locked')) openSheet(+card.dataset.i);
 });
 /* 曾在线但停止上报（断电 / 掉回 AP 热点）时，60 秒内自动标离线 */
 setInterval(function(){
@@ -678,11 +724,11 @@ var tabs=document.querySelectorAll('.tabs button');
 for(var i=0;i<tabs.length;i++) tabs[i].addEventListener('click',function(){ switchTab(this.dataset.tab); });
 
 $('#save').addEventListener('click',function(){ connect(); toast('已保存，正在连接'); });
-$('#conn').addEventListener('click',function(){ if(!connected) connect(); else toast('已连接，点击状态无操作'); });
+$('#conn').addEventListener('click',function(){ if(!connected) connect(); else toast(devLive()?'已连接，点击状态无操作':'等待设备上报中'); });
 $('#clearCfg').addEventListener('click',function(){
   localStorage.removeItem(CFG_KEY); localStorage.removeItem('mqtt_dash');
   cfg=readCfg(); fillForm(); if(client){ try{client.end(true);}catch(e){} client=null; }
-  setConn(false,'未连接'); toast('已清除，请重新填写');
+  setConn(false,'未连接'); dropLive(); toast('已清除，请重新填写');
 });
 $('#copyCfg').addEventListener('click',function(){
   var c=formToCfg();
@@ -693,12 +739,12 @@ $('#copyCfg').addEventListener('click',function(){
 });
 function promptCfg(url){ window.prompt('复制这条链接，在另一台手机打开即可完成配置：',url); }
 
-$('#calDry').addEventListener('click',function(){ send({a:'calall',wet:0}); toast('已记录为干土'); });
-$('#calWet').addEventListener('click',function(){ send({a:'calall',wet:1}); toast('已记录为已浇透'); });
-$('#sample').addEventListener('click',function(){ send({a:'sample'}); toast('已请求补采'); });
+$('#calDry').addEventListener('click',function(){ if(send({a:'calall',wet:0})) toast('已记录为干土'); });
+$('#calWet').addEventListener('click',function(){ if(send({a:'calall',wet:1})) toast('已记录为已浇透'); });
+$('#sample').addEventListener('click',function(){ if(send({a:'sample'})) toast('已请求补采'); });
 $('#logRefresh').addEventListener('click',function(){ send({a:'get',w:'logs'}); });
-$('#cycSel').addEventListener('change',function(){ send({a:'cycle',min:+this.value}); toast('采样周期已发送'); });
-$('#reboot').addEventListener('click',function(){ if(window.confirm('确定重启设备？')) { send({a:'reboot'}); toast('重启指令已发送'); } });
+$('#cycSel').addEventListener('change',function(){ if(send({a:'cycle',min:+this.value})) toast('采样周期已发送'); else this.value=''; });
+$('#reboot').addEventListener('click',function(){ if(window.confirm('确定重启设备？') && send({a:'reboot'})) toast('重启指令已发送'); });
 $('#mask').addEventListener('click',closeSheet);
 $('#tType').addEventListener('change',toggleTaskRows);
 $('#tCancel').addEventListener('click',resetTaskForm);
@@ -707,8 +753,10 @@ $('#tAdd').addEventListener('click',function(){
   var o={a:'task',ch:+$('#tCh').value,type:type,durSec:clamp(+$('#tDur').value||15,1,300)};
   if(type){ var m=/^(\d{1,2}):(\d{2})$/.exec($('#tAt').value.trim()); if(!m){ toast('时间格式 HH:MM'); return; } o.hour=clamp(+m[1],0,23); o.min=clamp(+m[2],0,59); }
   else { o.periodMin=clamp(Math.round((+$('#tPeriod').value||6)*60),1,4320); }
-  if(editIdx>=0){ o.i=editIdx; resetTaskForm(); }
-  send(o); toast('已保存');
+  var editing=editIdx>=0; if(editing) o.i=editIdx;
+  if(!send(o)) return;
+  if(editing) resetTaskForm();
+  toast('已保存');
 });
 
 switchTab(localStorage.getItem(TAB_KEY)||'ch');
