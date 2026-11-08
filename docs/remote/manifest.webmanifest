@@ -1,6 +1,6 @@
 {
   "name": "大黄智能浇水系统",
-  "short_name": "大黄浇水",
+  "short_name": "大黄智能",
   "description": "大黄智能浇水系统 - ESP32 六路远程控制台",
   "start_url": ".",
   "scope": ".",
