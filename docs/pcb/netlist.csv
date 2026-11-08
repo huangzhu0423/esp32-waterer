@@ -1,0 +1,67 @@
+net,from,to,width_mm,note
+5V_P,J0.1,JP1.1..JP6.1 / D1..D6.K / C2+,2.0 铜皮,5V 输入正极 单泵启动峰值 1.5A 单独 AWG18 进板
+PGND,J0.2,Q1..Q6.Source / C2- / GND 平面,地平面,所有 GND 必须共地 底层整片铺铜
+3V3,U1.3V3,K1.DC+ / K1.COM / Q7.S / C1+ / C3+,0.5,ESP32 板载 LDO 输出 并 470uF + 100nF
+GND,U1.GND,K1.DC- / JS1..JS6.2 / 全部下拉电阻地端,地平面,探头 GND 始终直连 不经过继电器
+VCC_S,K1.NO / Q7.D,JS1.1..JS6.1 / C3,0.5,经探头供电开关的 3V3 六路探头 VCC 并这里
+SENSOR_PWR_CTRL,U1.D27,K1.IN / Q7.G + RPU,0.3,V1 高电平通电 / V2 改 SENSOR_PWR_ACTIVE_LOW=1
+GATE1,U1.D13,RG1.1,0.3,ESP32 泵脚
+GATE1_D,RG1.2,Q1.G / TP_GATE1,0.3,100Ω 串在 MOS 这头
+GATE1_PD,Q1.G,RPD1.1 -> GND,0.25,10k 下拉 上电不误开的关键 必装
+PUMP1_P,JP1.1,5V_P / D1.K,2.0 铜皮,泵正极 1N4007 阴极朝这里
+PUMP1_N,JP1.2,Q1.D / D1.A,1.0,泵负极到 MOS Drain 每路 0.8A
+AOUT1,JS1.3,U1.VP / TP_AOUT1,0.25 包地,模拟线 远离 5V 粗铜皮 不跨分割
+AOUT1_PD,JS1.3,RAD1.1 -> GND,0.25,100k 下拉 断线才能稳定判 raw=0 必装
+AOUT1_RC,JS1.3,RS1 / CA1 -> GND,0.25,可选 1k + 100nF 低通 抑制泵噪声
+SENS1_GND,JS1.2,GND 平面,0.25,探头 GND 不经过供电开关
+SENS1_VCC,JS1.1,VCC_S,0.5,探头 VCC 经供电开关
+GATE2,U1.D18,RG2.1,0.3,ESP32 泵脚
+GATE2_D,RG2.2,Q2.G / TP_GATE2,0.3,100Ω 串在 MOS 这头
+GATE2_PD,Q2.G,RPD2.1 -> GND,0.25,10k 下拉 上电不误开的关键 必装
+PUMP2_P,JP2.1,5V_P / D2.K,2.0 铜皮,泵正极 1N4007 阴极朝这里
+PUMP2_N,JP2.2,Q2.D / D2.A,1.0,泵负极到 MOS Drain 每路 0.8A
+AOUT2,JS2.3,U1.VN / TP_AOUT2,0.25 包地,模拟线 远离 5V 粗铜皮 不跨分割
+AOUT2_PD,JS2.3,RAD2.1 -> GND,0.25,100k 下拉 断线才能稳定判 raw=0 必装
+AOUT2_RC,JS2.3,RS2 / CA2 -> GND,0.25,可选 1k + 100nF 低通 抑制泵噪声
+SENS2_GND,JS2.2,GND 平面,0.25,探头 GND 不经过供电开关
+SENS2_VCC,JS2.1,VCC_S,0.5,探头 VCC 经供电开关
+GATE3,U1.D19,RG3.1,0.3,ESP32 泵脚
+GATE3_D,RG3.2,Q3.G / TP_GATE3,0.3,100Ω 串在 MOS 这头
+GATE3_PD,Q3.G,RPD3.1 -> GND,0.25,10k 下拉 上电不误开的关键 必装
+PUMP3_P,JP3.1,5V_P / D3.K,2.0 铜皮,泵正极 1N4007 阴极朝这里
+PUMP3_N,JP3.2,Q3.D / D3.A,1.0,泵负极到 MOS Drain 每路 0.8A
+AOUT3,JS3.3,U1.D34 / TP_AOUT3,0.25 包地,模拟线 远离 5V 粗铜皮 不跨分割
+AOUT3_PD,JS3.3,RAD3.1 -> GND,0.25,100k 下拉 断线才能稳定判 raw=0 必装
+AOUT3_RC,JS3.3,RS3 / CA3 -> GND,0.25,可选 1k + 100nF 低通 抑制泵噪声
+SENS3_GND,JS3.2,GND 平面,0.25,探头 GND 不经过供电开关
+SENS3_VCC,JS3.1,VCC_S,0.5,探头 VCC 经供电开关
+GATE4,U1.D23,RG4.1,0.3,ESP32 泵脚
+GATE4_D,RG4.2,Q4.G / TP_GATE4,0.3,100Ω 串在 MOS 这头
+GATE4_PD,Q4.G,RPD4.1 -> GND,0.25,10k 下拉 上电不误开的关键 必装
+PUMP4_P,JP4.1,5V_P / D4.K,2.0 铜皮,泵正极 1N4007 阴极朝这里
+PUMP4_N,JP4.2,Q4.D / D4.A,1.0,泵负极到 MOS Drain 每路 0.8A
+AOUT4,JS4.3,U1.D35 / TP_AOUT4,0.25 包地,模拟线 远离 5V 粗铜皮 不跨分割
+AOUT4_PD,JS4.3,RAD4.1 -> GND,0.25,100k 下拉 断线才能稳定判 raw=0 必装
+AOUT4_RC,JS4.3,RS4 / CA4 -> GND,0.25,可选 1k + 100nF 低通 抑制泵噪声
+SENS4_GND,JS4.2,GND 平面,0.25,探头 GND 不经过供电开关
+SENS4_VCC,JS4.1,VCC_S,0.5,探头 VCC 经供电开关
+GATE5,U1.D25,RG5.1,0.3,ESP32 泵脚
+GATE5_D,RG5.2,Q5.G / TP_GATE5,0.3,100Ω 串在 MOS 这头
+GATE5_PD,Q5.G,RPD5.1 -> GND,0.25,10k 下拉 上电不误开的关键 必装
+PUMP5_P,JP5.1,5V_P / D5.K,2.0 铜皮,泵正极 1N4007 阴极朝这里
+PUMP5_N,JP5.2,Q5.D / D5.A,1.0,泵负极到 MOS Drain 每路 0.8A
+AOUT5,JS5.3,U1.D32 / TP_AOUT5,0.25 包地,模拟线 远离 5V 粗铜皮 不跨分割
+AOUT5_PD,JS5.3,RAD5.1 -> GND,0.25,100k 下拉 断线才能稳定判 raw=0 必装
+AOUT5_RC,JS5.3,RS5 / CA5 -> GND,0.25,可选 1k + 100nF 低通 抑制泵噪声
+SENS5_GND,JS5.2,GND 平面,0.25,探头 GND 不经过供电开关
+SENS5_VCC,JS5.1,VCC_S,0.5,探头 VCC 经供电开关
+GATE6,U1.D26,RG6.1,0.3,ESP32 泵脚
+GATE6_D,RG6.2,Q6.G / TP_GATE6,0.3,100Ω 串在 MOS 这头
+GATE6_PD,Q6.G,RPD6.1 -> GND,0.25,10k 下拉 上电不误开的关键 必装
+PUMP6_P,JP6.1,5V_P / D6.K,2.0 铜皮,泵正极 1N4007 阴极朝这里
+PUMP6_N,JP6.2,Q6.D / D6.A,1.0,泵负极到 MOS Drain 每路 0.8A
+AOUT6,JS6.3,U1.D33 / TP_AOUT6,0.25 包地,模拟线 远离 5V 粗铜皮 不跨分割
+AOUT6_PD,JS6.3,RAD6.1 -> GND,0.25,100k 下拉 断线才能稳定判 raw=0 必装
+AOUT6_RC,JS6.3,RS6 / CA6 -> GND,0.25,可选 1k + 100nF 低通 抑制泵噪声
+SENS6_GND,JS6.2,GND 平面,0.25,探头 GND 不经过供电开关
+SENS6_VCC,JS6.1,VCC_S,0.5,探头 VCC 经供电开关
