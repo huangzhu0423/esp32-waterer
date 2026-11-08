@@ -33,6 +33,7 @@ static bool     s_conn = false;        /* 当前是否已连上 broker */
 static uint32_t  s_nextConnMs = 0;     /* 下次尝试连接的时间戳（失败退避） */
 static uint32_t  s_nextPubMs = 0;      /* 下次周期上报的时间戳 */
 static bool      s_publishNow = false;  /* 有变更，立即上报 */
+static uint8_t   s_pubFail = 0;         /* 连续 publish 失败次数 */
 static bool      s_lastAct = false;     /* 上一拍泵是否在转（用于变更检测） */
 static int8_t    s_lastCh = -1;
 static uint8_t   s_lastFault = 0;       /* 故障掩码快照 */
@@ -121,10 +122,35 @@ static void topicName(char* out, size_t n, const char* sub) {
   snprintf(out, n, "%s%s", flat, s);
 }
 
+/* 运行中掉线：把「假在线」彻底落地。
+ * 旧版只维护自己的 s_conn，PubSubClient 内部早已把连接判死也不回读，
+ * 结果 s_conn 永远是 true：既不重连、publish 静默失败、命令也收不到，
+ * /api/state 还一直报 mqtt=1，手机远程页只能永远「等待设备上报中」。
+ * 这里统一清状态、关掉半开 socket、留一条日志，下一拍由 mqttTick 重连。 */
+static void noteDrop(void) {
+  if (!s_conn) return;
+  s_conn = false;
+  s_pubFail = 0;
+  s_reply = 0;              /* 挂起的应答作废，重连后会重新拉一次 */
+  s_errPending = false;
+  s_publishNow = false;
+  s_nextConnMs = millis() + MQTT_DROP_RETRY_MS;
+  s_mqtt.disconnect();      /* 顺带把 PubSubClient 内部 CONNECTED 状态清掉 */
+  s_wc.stop();
+  logAdd(LOG_MQTT, -1);
+}
+
 static void publishJson(const char* b) {
+  if (!s_conn) return;
   char top[MQTT_BASE_MAX_LEN + 16];
   topicName(top, sizeof(top), "state");
-  s_mqtt.publish(top, b, false);
+  /* publish 内部会调 connected()，底层 socket 一断就直接返回 false。
+     连续两次失败才判掉线，避免单帧过大被拒时误重连。 */
+  if (s_mqtt.publish(top, b, false)) {
+    s_pubFail = 0;
+  } else if (++s_pubFail >= 2) {
+    noteDrop();
+  }
 }
 
 /* 设备墙上时钟 = UTC epoch 秒。time(nullptr) 不受 configTime 的东八区
@@ -548,13 +574,15 @@ static void attemptConnect(uint32_t nowMs) {
                            s_pass[0]  ? s_pass  : nullptr,
                            avail, 0, true, "offline");
 
-  if (!ok) {
+  if (!ok || !s_mqtt.connected()) {
     s_conn = false;
+    s_wc.stop();
     s_nextConnMs = nowMs + MQTT_RETRY_MS;
     return;
   }
 
   s_conn = true;
+  s_pubFail = 0;
   char cmd[MQTT_BASE_MAX_LEN + 16];
   topicName(cmd, sizeof(cmd), "cmd");
   s_mqtt.subscribe(cmd);
@@ -598,7 +626,9 @@ void mqttBegin(void) {
 
   s_mqtt.setBufferSize(MQTT_BUF_SIZE);
   s_mqtt.setCallback(onMessage);
+  s_mqtt.setKeepAlive(15);   /* 半开连接最多 2×15 秒由 PINGREQ 超时判死 */
   s_conn = false;
+  s_pubFail = 0;
   s_nextConnMs = 0;
   s_lastAct = false;
   s_lastCh = -1;
@@ -625,7 +655,13 @@ void mqttTick(uint32_t nowMs) {
     return;
   }
 
-  s_mqtt.loop();
+  /* 关键：PubSubClient 会在 keepalive 超时后自己把连接判死，
+     但那只是它的内部状态。必须回读一次，否则设备永远卡在 s_conn=true，
+     既不重连也不上报，远程页就一直停在「等待设备上报中」。 */
+  if (!s_mqtt.loop() || !s_mqtt.connected()) {
+    noteDrop();
+    return;
+  }
 
   bool act = pumpIsActive();
   int8_t ch = act ? pumpActiveCh() : -1;
@@ -668,7 +704,7 @@ void mqttTick(uint32_t nowMs) {
 void mqttPublishState(void) { s_publishNow = true; }
 
 bool mqttEnabled(void)   { return s_en; }
-bool mqttConnected(void) { return s_conn; }
+bool mqttConnected(void) { return s_conn && s_mqtt.connected(); }
 
 /* ================= 配置读写 ================= */
 bool mqttCfgEnabled(void) { return s_en; }

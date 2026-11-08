@@ -14,12 +14,14 @@
 ```json
 {
   "ok": 1,
-  "fw": "1.0.0",
+  "fw": "1.1.3",
   "up": 84213,           // 运行秒数
   "heap": 236544,        // 可用内存
   "mode": "sta",         // sta | ap
   "ip": "192.168.1.42",
   "rssi": -58,
+  "mqtten": 1,           // 配置里是否启用 MQTT
+  "mqtt": 1,             // 当前是否真的连着 broker（1.1.3 起回读底层 socket）
   "timeOk": 1,           // 时间是否已同步（每日型定时任务依赖它）
   "q": 0,                // 排队数量
   "lock": 0,             // 掉电锁定剩余秒数
@@ -33,6 +35,10 @@
 
 `active` 为 `null` 表示空闲。`flt` 故障码：0 正常 / 1 断线 / 2 短路 / 3 卡死 / 4 噪声。
 `run` 正在浇水，`q` 排队中，`bud` 本小时已用秒数。
+
+> **1.1.3 起 `mqtt` 说真话**：旧版只看设备自己维护的 `s_conn`，TCP 早被 broker/NAT
+> 掐断时也一直报 `1`，实际既不发状态帧也收不到指令。现在它是
+> `s_conn && PubSubClient::connected()`，掉线会显示 `0` 并在 1.5 秒后自动重连。
 
 ## POST /api/pump
 
@@ -160,7 +166,7 @@
 ## GET /api/version
 
 ```json
-{ "ok":1, "fw":"1.1.2", "build":"Nov  8 2026 00:30:00", "ap":"AutoWater-3F2A" }
+{ "ok":1, "fw":"1.1.3", "build":"Nov  8 2026 00:30:00", "ap":"AutoWater-3F2A" }
 ```
 
 ## POST /api/reboot
@@ -183,6 +189,25 @@
 - NTP 未同步时 `wall=boot=w=0`，远程页回落到「收到状态帧的时刻 − up」反推，不会显示错时间。
 - 设备端 `start` 命令读 `s` 字段作为本次时长，缺省才回落该通道 `maxSec`，上限 `HARD_MAX_SEC=300`。
 - **`k=e` 是 1.1.2 新增的失败应答**：此前令牌不对或探头断线时设备直接丢弃指令、不回任何帧，页面表现为「点了没反应」。现在 `err` 取 `token` / `bad_ch` / `sensor_fault` / `budget` / `busy` / `cooldown` / `lockout` / `invalid`，远程页会弹中文提示。故障通道的浇水按钮同时置灰。
+
+### 连接保活与自动重连（1.1.3）
+
+远程页显示「等待设备上报中」的唯一条件是 **60 秒内没收到真实 `k=s` 帧**。1.1.3 之前最典型的故障是：
+
+1. 设备开机连上 broker，`s_conn=true`；
+2. 几小时后 WiFi 抖动 / broker 主动断链 / NAT 老化，`PubSubClient` 内部已判定连接丢失；
+3. 固件从不回读 `s_mqtt.connected()`，于是永远不重连 → `publish` 静默失败、命令收不到；
+4. `/api/state` 仍报 `mqtt=1`，手机端只能一直等首帧。
+
+修复点：
+
+- `mqttTick()` 每拍 `loop()` 后检查 `loop()` 返回值和 `s_mqtt.connected()`，一旦掉线立即清状态、停掉半开 socket、写一条 `LOG_MQTT`，1.5 秒后重连。
+- `publishJson()` 检查 `publish()` 返回值，连续 2 次失败也判定掉线（可覆盖缓冲不足以外的底层断链）。
+- `setKeepAlive(15)`：半开连接最多约 30 秒由 PINGREQ 超时判死。
+- 重连成功会立刻 `publishState()`，不用等下一个 30 秒周期。
+- 远程页连上 broker 后不再干等周期帧，按 `0 / 2 / 5 / 10 / 20 秒` 主动重发 `get`，收到首帧 `k=s` 即停；等待提示会显示已重试次数，第 4 次仍未响应改提示「设备未响应 · 检查设备网络」。
+
+排查顺序：`GET /api/state` 看 `mqtt` → `GET /api/logs?since=N` 看有没有连续的 `MQTT 连接状态变化` → 用 WSS 订阅 `<前缀>state` 发一次 `get w:state`，在线设备会在 1 秒内回 `k=s`。
 
 ## 设计取舍
 

@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 /* ================= 固件信息 ================= */
-#define FW_VERSION   "1.1.2"
+#define FW_VERSION   "1.1.3"
 #define FW_BUILD     __DATE__ " " __TIME__
 
 /* ================= 规模 ================= */
@@ -218,6 +218,7 @@ static const uint8_t PIN_PUMP[CHANNEL_COUNT] = {
 #define MQTT_BUF_SIZE       2048   /* 收发缓冲：状态帧约 1KB，日志帧 12 条带绝对时间/时长最长约 1.7KB */
 #define MQTT_PUB_MS        30000   /* 状态上报节流：最多每 30 秒一次 */
 #define MQTT_RETRY_MS       5000   /* 连接失败后 5 秒重试 */
+#define MQTT_DROP_RETRY_MS  1500   /* 运行中掉线后 1.5 秒就重连，别让手机干等 */
 #define MQTT_PORT_DFLT     1883
 /* 主题前缀默认 aw_XXXX（XXXX=芯片 ID 后四位），与热点名呼应；
  * 同一 broker 上别人猜到前缀也改不了什么，但指令必须带正确令牌。 */

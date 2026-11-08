@@ -572,7 +572,7 @@ function onWater(i,override){
 
 /* ---------- 状态解析 ---------- */
 function applyState(s){
-  gotState=true; lastStateAt=Date.now(); clearTimeout(onlineTimer);
+  gotState=true; lastStateAt=Date.now(); clearTimeout(onlineTimer); clearTimeout(pullTimer);
   $('#dAvail').textContent='在线';
   $('#devPanel') && ($('#devPanel').hidden=false);
   for(var i=0;i<N&&s.ch&&i<s.ch.length;i++){
@@ -606,11 +606,31 @@ function applyState(s){
 
 /* ---------- 连接 ---------- */
 /* 连上 broker 不等于设备可用：只有持续收到真实状态帧才算在线 */
+/* broker 连上 ≠ 设备在线：设备每 30 秒才主动发一帧状态，
+   手机刚连上正好错过就得干等。连上后按 0/2/5/10/20 秒主动重试 get，
+   设备在线会立刻回 k=s；等待提示里同时显示已重试次数。 */
+var pullTimer=null, pullTry=0;
+var PULL_GAPS=[0,2000,5000,10000,20000];
+function pullState(){
+  clearTimeout(pullTimer);
+  pullTry=0;
+  var step=function(){
+    if(!connected || !client || (gotState && devLive())) return;
+    pullTry++;
+    send({a:'get',w:(pullTry===1?'all':'state')});
+    if(!gotState && connected){
+      setConn(true, pullTry>=4?'设备未响应 · 检查设备网络':'等待设备上报中…'+pullTry, 'wait');
+    }
+    if(pullTry<PULL_GAPS.length) pullTimer=setTimeout(step,PULL_GAPS[pullTry]);
+  };
+  step();
+}
 function devLive(){
   return !!(connected && gotState && lastStateAt && (Date.now()-lastStateAt)<60000);
 }
 function dropLive(){
-  gotState=false; lastStateAt=0; lastLive=null; renderAll();
+  gotState=false; lastStateAt=0; lastLive=null;
+  clearTimeout(pullTimer); pullTry=0; renderAll();
 }
 function lockControls(live){
   ['#sample','#reboot','#calDry','#calWet','#cycSel','#tAdd'].forEach(function(sel){
@@ -655,7 +675,7 @@ function connect(){
   if(u) opt.username=u; if(p) opt.password=p;
   setConn(false,'连接中…');
   gotState=false; lastStateAt=0; bootWallMs=0; LOGS=[]; activeCh=-1; lastLive=null;
-  clearTimeout(onlineTimer); renderAll();
+  clearTimeout(onlineTimer); clearTimeout(pullTimer); pullTry=0; renderAll();
   /* 状态周期最长 30 秒。avail 的 retain 可能是设备掉线后残留的 online，
      不能拿它当在线证据，一律以是否收到状态帧为准。 */
   onlineTimer=setTimeout(function(){
@@ -670,7 +690,7 @@ function connect(){
     syncLive();                       /* 此时还没有状态帧，卡片保持灰锁 */
     client.subscribe(mqTopic('state'),{qos:0});
     client.subscribe(mqTopic('avail'),{qos:0});
-    send({a:'get',w:'all'});
+    pullState();                      /* 主动拉首帧，不再干等 30 秒周期 */
   });
   client.on('reconnect',function(){ setConn(false,'重连中…'); dropLive(); });
   client.on('close',function(){ setConn(false,'已断开'); dropLive(); });
