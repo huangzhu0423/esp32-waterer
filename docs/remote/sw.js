@@ -3,14 +3,16 @@
  * HTML 一律 network-first，保证 GitHub Pages 更新后不会被旧缓存锁死。
  * 巴法云 WSS / MQTT 是跨域且非同源静态资源，这里完全不拦截。
  */
-const CACHE = 'dahuang-remote-v4';
+const CACHE = 'dahuang-remote-v5';
 const SHELL = [
   './',
   './index.html',
   './manifest.webmanifest',
   './icon-192.png',
   './icon-512.png',
-  './apple-touch-icon.png'
+  './icon-maskable-512.png',
+  './apple-touch-icon.png',
+  './favicon.ico'
 ];
 
 self.addEventListener('install', function (e) {
@@ -63,7 +65,24 @@ self.addEventListener('fetch', function (e) {
     return;
   }
 
-  // 图标 / manifest 等静态资源：cache-first，命中即返回
+  // manifest 必须 network-first：浏览器安装 PWA / 刷新 WebAPK 图标时，
+  // 要拿到最新的 icons 清单，不能被旧缓存锁死。
+  if (url.pathname.indexOf('manifest.webmanifest') >= 0) {
+    e.respondWith(
+      fetch(req).then(function (res) {
+        if (res && res.ok) {
+          const copy = res.clone();
+          e.waitUntil(caches.open(CACHE).then(function (c) {
+            return c.put('./manifest.webmanifest', copy);
+          }).catch(function () {}));
+        }
+        return res;
+      }).catch(function () { return caches.match('./manifest.webmanifest'); })
+    );
+    return;
+  }
+
+  // 图标 / favicon 等静态资源：cache-first，命中即返回
   e.respondWith(
     caches.match(req).then(function (hit) {
       return hit || fetch(req);

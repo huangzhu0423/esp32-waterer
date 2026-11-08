@@ -2,6 +2,7 @@
   "name": "大黄智能浇水系统",
   "short_name": "大黄智能",
   "description": "大黄智能浇水系统 - ESP32 六路远程控制台",
+  "id": "/esp32-waterer/remote/",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
@@ -11,6 +12,6 @@
   "icons": [
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
