@@ -187,4 +187,4 @@ python tools/check_firmware.py      # 静态检查门禁
 
 ## 硬件清单
 
-已备齐，接线看 [docs/WIRING.md](docs/WIRING.md)。核心元件：ESP32 DEVKIT V1、电容式土壤湿度传感器 ×6、5V 潜水泵 ×6、逻辑电平 N-MOS（AO3400 / IRLZ44N）×6、100Ω 与 10kΩ 电阻、1N4007、5V/2A 电源。
+已备齐，接线看 [docs/WIRING.md](docs/WIRING.md)。核心元件：ESP32 DEVKIT V1、电容式土壤湿度传感器 ×6、5V 潜水泵 ×6、逻辑电平 N-MOS（AO3400 / IRLZ44N）×6、100Ω 与 10kΩ 电阻、1N4007、5V/5A 电源（单泵启动峰值 1.5A，需留余量）。
