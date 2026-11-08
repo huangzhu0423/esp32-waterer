@@ -115,6 +115,10 @@ pio run -t upload
 别人扫到 URL 就能开泵抽干水箱、改 WiFi 配置让你再也连不上。MQTT 把访问控制交给 broker
 （账号密码 + 主题隔离），再叠加一层**指令令牌**，比裸奔网页安全得多。
 
+远程页是 **PWA**：浏览器菜单选「添加到主屏幕 / 安装应用」（iOS Safari 用「分享 → 添加到主屏幕」），
+之后从桌面图标全屏打开，没有地址栏；页面内有安装引导。`docs/remote/sw.js` 只缓存页面壳与图标，
+HTML 走 network-first，所以 Pages 更新后不会被旧缓存锁死；MQTT/WSS 流量不经 Service Worker。
+
 ### 配置（设置页 → 远程 MQTT）
 
 | 项 | 说明 |

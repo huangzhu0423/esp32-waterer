@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#f4f6fa">
+<meta name="theme-color" content="#ffffff">
 <title>大黄智能浇水系统</title>
 
 <script>
@@ -136,23 +136,66 @@ details.conf[open] summary:after{transform:rotate(90deg)}
 .slider-block .lb b{font-size:15px}
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translate(-50%,16px);background:rgba(22,32,46,.94);color:#fff;font-size:13px;padding:10px 18px;border-radius:99px;opacity:0;transition:.24s;pointer-events:none;z-index:40;max-width:86vw;text-align:center;line-height:1.4}
 #toast.on{opacity:1;transform:translate(-50%,0)}
+
+/* ===== App 化：固定顶栏 + 底部 Tab Bar（追加覆盖，不改原规则） ===== */
+html,body{height:100%}
+body{padding-bottom:0;display:flex;flex-direction:column;overflow:hidden;background:#f2f5fa}
+.appbar{flex:none;background:#fff;border-bottom:1px solid #e6ebf2;padding:calc(env(safe-area-inset-top) + 10px) 16px 11px;z-index:8}
+.appbar .hd{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.appbar .hd h1{font-size:16px;font-weight:650;display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brandmark{width:24px;height:24px;flex:none;display:block}
+.appbar .pill{flex:none}
+.sub{display:none}
+.wrap{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;width:100%;max-width:520px;margin:0 auto;padding:14px 14px calc(88px + env(safe-area-inset-bottom))}
+.wrap::-webkit-scrollbar{width:0}
+.group-title{display:flex;align-items:center;justify-content:space-between;margin:4px 4px 8px;font-size:12px;font-weight:650;color:#7b8899;letter-spacing:.4px}
+.linkbtn{border:0;background:transparent;color:#2563eb;font-size:12px;font-weight:600;padding:2px 0}
+.linkbtn:disabled{opacity:.45;cursor:not-allowed}
+.strip{border-radius:14px;padding:11px 13px;margin-bottom:16px;box-shadow:0 1px 2px rgba(20,40,80,.04)}
+.grid{gap:10px;margin-bottom:18px}
+.card{border-radius:16px;box-shadow:0 1px 2px rgba(20,40,80,.04)}
+.card.fault,.card.locked{background:#f7f9fc}
+.panel{border-radius:16px;margin-bottom:16px}
+/* 顶部标签整块变成底部固定的图标 Tab Bar，class 仍是 .tabs，JS 选择器不变 */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:9;margin:0;padding:6px 6px calc(6px + env(safe-area-inset-bottom));border-radius:0;border-top:1px solid #e6ebf2;background:#fff;gap:0;display:flex;align-items:stretch;min-height:64px;box-shadow:0 -2px 12px rgba(20,40,80,.05)}
+.tabs button{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px 0 2px;border-radius:10px;font-size:10.5px;font-weight:600;color:#9aa7b6;background:transparent;box-shadow:none}
+.tabs button.on{background:transparent;color:#2563eb;box-shadow:none}
+.tabs button svg{width:21px;height:21px;stroke-width:1.9;display:block}
+.sheet{padding-bottom:calc(20px + env(safe-area-inset-bottom));z-index:20}
+#toast{bottom:calc(88px + env(safe-area-inset-bottom));z-index:30}
+/* 安装引导 */
+.install{display:flex;align-items:center;gap:11px;background:linear-gradient(120deg,#eef4ff,#f3f9ff);border:1px solid #dbe8ff;border-radius:16px;padding:13px;margin-bottom:12px}
+.install .ico{width:38px;height:38px;border-radius:11px;background:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 2px 8px rgba(37,99,235,.12)}
+.install .tx{flex:1;min-width:0}
+.install .tx b{font-size:13px;display:block}
+.install .tx span{font-size:11.5px;color:#7b8899}
+.install .btn{flex:none}
+.install-tip{display:none;background:#fff;border:1px solid #dbe8ff;border-radius:14px;padding:13px;margin-bottom:16px;font-size:12.5px;color:#0F6E56;line-height:1.7}
+.install-tip.on{display:block}
+
+/* ===== 布局修正：防横向溢出，顶栏 / 内容 / 底栏同宽 ===== */
+html,body{max-width:100%;overflow-x:hidden}
+.appbar{width:100%;max-width:520px;margin:0 auto;min-width:0}
+.appbar .hd{min-width:0}
+.appbar .hd h1{flex:1;min-width:0}
+.wrap{min-width:0}
+.grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.card{min-width:0;overflow:hidden}
+.card .nm,.card .dt{max-width:100%}
+.tabs{left:50%;right:auto;transform:translateX(-50%);width:100%;max-width:520px}
+.panel{min-width:0}
 </style>
 </head>
 <body>
-<div class="wrap">
+<header class="appbar">
   <div class="hd">
-    <h1>大黄智能浇水系统</h1>
+    <h1><svg class="brandmark" viewBox="0 0 24 24" fill="none"><path d="M12 2.2c3.9 4.6 6.7 8.1 6.7 11.4A6.7 6.7 0 0 1 5.3 13.6C5.3 10.3 8.1 6.8 12 2.2Z" fill="#2563eb"/><path d="M8.9 14.4a3.2 3.2 0 0 0 3.2 3.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round" opacity=".85"/></svg>大黄智能浇水系统</h1>
     <span class="pill off" id="conn"><span class="dot"></span><span id="connT">未连接</span></span>
   </div>
   <div class="sub" id="subline">6 路 · 等待设备上报</div>
+</header>
+<div class="wrap">
   <div class="banner" id="banner"></div>
-
-  <div class="tabs">
-    <button class="on" data-tab="ch">通道</button>
-    <button data-tab="time">定时</button>
-    <button data-tab="log">日志</button>
-    <button data-tab="set">设置</button>
-  </div>
 
   <!-- 通道 -->
   <div id="p-ch">
@@ -161,15 +204,13 @@ details.conf[open] summary:after{transform:rotate(90deg)}
       <span class="grow" id="stripTxt">等待设备上报</span>
       <span id="stripExtra"></span>
     </div>
-    <div class="panel">
-      <h3>标定与采样</h3>
-      <div style="display:flex;gap:8px;padding:8px 0 4px">
-        <button class="btn ghost sm" id="calDry" style="flex:1">记录为干土</button>
-        <button class="btn ghost sm" id="calWet" style="flex:1">记录为已浇透</button>
-      </div>
-      <div style="padding:6px 0 11px"><button class="btn ghost sm" id="sample" style="width:100%">立即补采一轮</button></div>
-    </div>
+    <div class="group-title"><span>六路通道</span><button class="linkbtn" id="sample">立即补采一轮</button></div>
     <div class="grid" id="grid"></div>
+    <div class="group-title"><span>标定与采样</span></div>
+    <div class="panel" style="padding:12px 14px;display:flex;gap:8px">
+      <button class="btn ghost sm" id="calDry" style="flex:1">记录为干土</button>
+      <button class="btn ghost sm" id="calWet" style="flex:1">记录为已浇透</button>
+    </div>
   </div>
 
   <!-- 定时 -->
@@ -198,6 +239,12 @@ details.conf[open] summary:after{transform:rotate(90deg)}
 
   <!-- 设置 -->
   <div id="p-set" hidden>
+    <div class="install" id="installCard">
+      <span class="ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="3"/><path d="M12 6v8m-3-3 3 3 3-3"/><path d="M9 18h6"/></svg></span>
+      <span class="tx"><b>添加到主屏幕</b><span>全屏打开，没有浏览器地址栏</span></span>
+      <button class="btn sm" id="installBtn">安装</button>
+    </div>
+    <div class="install-tip" id="installTip"></div>
     <div class="panel">
       <h3>采样周期</h3>
       <div class="row"><span class="grow">间隔</span>
@@ -244,6 +291,13 @@ details.conf[open] summary:after{transform:rotate(90deg)}
       </details>
     </div>
   </div>
+</div>
+
+<div class="tabs" id="tabbar">
+  <button class="on" data-tab="ch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/></svg><span>通道</span></button>
+  <button data-tab="time"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.4 2"/></svg><span>定时</span></button>
+  <button data-tab="log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="12" r="1.1" fill="currentColor" stroke="none"/><circle cx="4" cy="18" r="1.1" fill="currentColor" stroke="none"/></svg><span>日志</span></button>
+  <button data-tab="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M19.2 14.4a1.6 1.6 0 0 0 .3 1.8l.1.1-2.1 2.1-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5v.2h-3v-.2a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1-2.1-2.1.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H5v-3h.2a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1 2.1-2.1.1.1a1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5V5h3v.2a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1 2.1 2.1-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1h.2v3h-.2a1.6 1.6 0 0 0-1.5 1Z"/></svg><span>设置</span></button>
 </div>
 
 <div class="mask" id="mask"></div>
@@ -786,6 +840,36 @@ if(!ready()){
   $('#token').focus();
 }else{
   connect();
+}
+})();
+</script>
+<script>
+(function(){
+"use strict";
+var $=function(s){return document.querySelector(s);};
+var card=$('#installCard'), btn=$('#installBtn'), tip=$('#installTip'), deferred=null;
+var ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+var standalone=function(){
+  return (window.matchMedia&&window.matchMedia('(display-mode: standalone)').matches)||window.navigator.standalone===true;
+};
+if(standalone()&&card) card.hidden=true;
+window.addEventListener('beforeinstallprompt',function(e){
+  e.preventDefault(); deferred=e; if(card) card.hidden=false;
+});
+window.addEventListener('appinstalled',function(){ deferred=null; if(card) card.hidden=true; });
+if(btn) btn.addEventListener('click',function(){
+  if(deferred){ deferred.prompt(); deferred.userChoice.then(function(){ deferred=null; }); return; }
+  if(!tip) return;
+  if(ios) tip.textContent='点底部「分享」→ 选「添加到主屏幕」→ 点「添加」。之后从桌面图标打开就是全屏，没有地址栏。';
+  else if(standalone()) tip.textContent='已经从桌面图标打开，当前就是全屏模式。';
+  else tip.textContent='点浏览器菜单 →「添加到主屏幕 / 安装应用」。若没有该选项，请用 Chrome 或 Edge 打开本页；iOS 请用 Safari。';
+  tip.classList.add('on');
+});
+/* 离线壳只在 HTTPS 下注册，本地 file:// 打开不注册；巴法云 WSS 不走 SW。 */
+if('serviceWorker' in navigator && location.protocol==='https:'){
+  window.addEventListener('load',function(){
+    navigator.serviceWorker.register('sw.js',{scope:'./'}).catch(function(){});
+  });
 }
 })();
 </script>
