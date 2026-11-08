@@ -3,7 +3,7 @@
  * HTML 一律 network-first，保证 GitHub Pages 更新后不会被旧缓存锁死。
  * 巴法云 WSS / MQTT 是跨域且非同源静态资源，这里完全不拦截。
  */
-const CACHE = 'dahuang-remote-v2';
+const CACHE = 'dahuang-remote-v3';
 const SHELL = [
   './',
   './index.html',
